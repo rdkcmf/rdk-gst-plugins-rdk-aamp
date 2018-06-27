@@ -1,0 +1,159 @@
+##########################################################################
+# Copyright 2018 RDK Management
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Library General Public
+# License as published by the Free Software Foundation, version 2
+# of the license.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Library General Public License for more details.
+#
+# You should have received a copy of the GNU Library General Public
+# License along with this library; if not, write to the
+# Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+# Boston, MA 02110-1301, USA.
+#########################################################################
+
+cmake_minimum_required (VERSION 2.6)
+project (AAMP)
+#find_package(GStreamer 1.4 REQUIRED)
+#add_subdirectory(jsbindings)
+find_package(PkgConfig REQUIRED)
+
+if(NOT CMAKE_USE_GST_0.10)
+	message("CMAKE_USE_GST_0.10 not set, use gstreamer-1.0")
+	pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
+	pkg_check_modules(GSTREAMERBASE REQUIRED gstreamer-app-1.0)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_GST1")
+else()
+	message("CMAKE_USE_GST_0.10 set, use gstreamer-0.10")
+	pkg_check_modules(GSTREAMER REQUIRED gstreamer-0.10)
+	pkg_check_modules(GSTREAMERBASE REQUIRED gstreamer-app-0.10)
+endif()
+pkg_check_modules(CURL REQUIRED libcurl)
+
+if(CMAKE_AAMP_CC_ENABLED)
+	message("CMAKE_AAMP_CC_ENABLED set")
+	pkg_check_modules(DIRECTFB REQUIRED directfb)
+endif()
+
+# Mac OS X
+if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    set(OS_CXX_FLAGS "${OS_CXX_FLAGS} -g -x objective-c++")
+    set(OS_LD_FLAGS "${OS_LD_FLAGS} -framework Cocoa")
+    string(STRIP ${OS_LD_FLAGS} OS_LD_FLAGS)
+    set(AAMP_CLI_LD_FLAGS "${AAMP_CLI_LD_FLAGS} -lgstvideo-1.0")
+    string(STRIP ${AAMP_CLI_LD_FLAGS} AAMP_CLI_LD_FLAGS)
+    set(AAMP_OS_SOURCES cocoa_window.mm)
+endif(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+
+find_package (Threads REQUIRED)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} drm drm/ave drm/aes)
+include_directories(${GSTREAMER_INCLUDE_DIRS})
+include_directories(${CURL_INCLUDE_DIRS})
+include_directories(${GSTREAMERBASE_INCLUDE_DIRS})
+
+if(CMAKE_CONTENT_METADATA_IPDVR_ENABLED)
+	message("CMAKE_CONTENT_METADATA_IPDVR_ENABLED set")
+	set(SEC_CLIENT_LIB -lSecClient )
+	set(SEC_CONTENT_METADATA_ENABLED "-DAAMP_CONTENT_METADATA_IPDVR_ENABLED")
+elseif(CMAKE_USE_SECCLIENT)
+	set(SEC_CLIENT_LIB -lSecClient )
+endif()
+
+if(CMAKE_USE_OPENCDM)
+	message("CMAKE_USE_OPENCDM set")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_OPENCDM")
+endif()
+
+set(AAMP_COMMON_DEPENDENCIES ${OS_LD_FLAGS} ${GSTREAMERBASE_LIBRARIES} ${GSTREAMER_LIBRARIES} ${CURL_LIBRARIES}  ${AAMP_CLI_LD_FLAGS} -ldl -luuid ${SEC_CLIENT_LIB})
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-multichar -std=c++11")
+
+if(CMAKE_IARM_MGR)
+	message("CMAKE_IARM_MGR set")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DIARM_MGR")
+endif()
+
+set(GSTAAMP_SOURCES gstaamp.cpp gstaampsrc.cpp gstaampinit.cpp)
+if(CMAKE_DASH_DRM)
+	message("CMAKE_DASH_DRM set")
+	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/ave/StubsForAVEPlayer.cpp)
+	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp)
+endif()
+
+add_library(gstaampplugin SHARED ${GSTAAMP_SOURCES})
+
+if(CMAKE_DASH_DRM)
+	target_include_directories (gstaampplugin PRIVATE drm/gst)
+	set(AAMP_COMMON_DEPENDENCIES "${AAMP_COMMON_DEPENDENCIES} -lIARMBus -lds -lsystemd")
+	if(CMAKE_USE_OPENCDM)
+		if (DEFINED SECAPI_ENGINE_BROADCOM_SAGE)
+			add_definitions( -DUSE_SECAPI_BRCMHW=1 )
+			if(DEFINED SAGE_SVP)
+				add_definitions (-DUSE_SAGE_SVP)
+			endif()
+		elseif(DEFINED SECAPI_ENGINE_BROADCOM_RAAGA)
+			add_definitions( -DUSE_SECAPI_BRCMHW=1 )
+		endif()
+		find_path (STAGING_INCDIR opencdm)
+		include_directories(${STAGING_INCDIR}/opencdm)
+	else()
+		if (DEFINED SECAPI_ENGINE_BROADCOM_SAGE)
+			add_definitions( -DUSE_SECAPI_BRCMHW=1 )
+			if(DEFINED SAGE_SVP)
+				add_definitions (-DUSE_SAGE_SVP)
+			endif()
+		elseif(DEFINED SECAPI_ENGINE_BROADCOM_RAAGA)
+			add_definitions( -DUSE_SECAPI_BRCMHW=1 )
+		endif()
+		find_path (STAGING_INCDIR playready)
+		find_path (STAGING_INCDIR playready/oem/common/inc)
+		find_path (STAGING_INCDIR playready/oem/ansi/inc)
+		include_directories(${STAGING_INCDIR}/playready)
+		include_directories(${STAGING_INCDIR}/playready/oem/common/inc)
+		include_directories(${STAGING_INCDIR}/playready/oem/ansi/inc)
+	endif()
+	set(AAMP_DEFINES "${AAMP_DEFINES} -DAAMP_MPD_DRM=1 -DDRM_BUILD_PROFILE=DRM_BUILD_PROFILE_OEM -DTARGET_LITTLE_ENDIAN=1 -DTARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS=0 ${SEC_CONTENT_METADATA_ENABLED}")
+else()
+	message("CMAKE_DASH_DRM not set")
+endif()
+
+target_link_libraries (gstaampplugin aamp ${AAMP_COMMON_DEPENDENCIES} )
+
+if(CMAKE_AAMP_CC_ENABLED)
+	message("CMAKE_AAMP_CC_ENABLED set")
+	#Enable CC support in gstreamer aamp plugin
+	include_directories(${DIRECTFB_INCLUDE_DIRS})
+	include_directories(${DIRECTFB_INCLUDE_DIRS}/fusion)
+	include_directories(${DIRECTFB_INCLUDE_DIRS}/direct)
+	set(LIBAAMP_DEFINES "${AAMP_DEFINES} -DAAMP_CC_ENABLED")
+else()
+	message("CMAKE_AAMP_CC_ENABLED not set")
+	set(LIBAAMP_DEFINES "${AAMP_DEFINES}")
+endif()
+
+if(CMAKE_SOC_PLATFORM_INTEL)
+	message("CMAKE_SOC_PLATFORM_INTEL set")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DINTELCE=1 -DAAMP_STOP_SINK_ON_SEEK=1 -DUSE_SYSLOG_HELPER_PRINT=1")
+endif()
+
+#TODO Remove once PrivateInstanceAAMP is compilation flag independent.
+if(CMAKE_USE_SECCLIENT)
+	message("CMAKE_USE_SECCLIENT set")
+	set(LIBAAMP_DEFINES "${LIBAAMP_DEFINES} -DUSE_SECCLIENT")
+endif()
+
+install(TARGETS gstaampplugin DESTINATION lib/gstreamer-1.0)
+
+if(CMAKE_WPEWEBKIT_JSBINDINGS)
+	message("CMAKE_WPEWEBKIT_JSBINDINGS set")
+	target_link_libraries (gstaampplugin aampjsbindings)
+	set(LIBAAMP_DEFINES "${LIBAAMP_DEFINES} -DAAMP_JSCONTROLLER_ENABLED")
+endif()
+
+set_target_properties(gstaampplugin PROPERTIES COMPILE_FLAGS "${LIBAAMP_DEFINES}")
