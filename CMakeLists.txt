@@ -86,10 +86,10 @@ if(CMAKE_DASH_DRM)
 	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp)
 endif()
 
-add_library(gstaampplugin SHARED ${GSTAAMP_SOURCES})
+add_library(gstaamp SHARED ${GSTAAMP_SOURCES})
 
 if(CMAKE_DASH_DRM)
-	target_include_directories (gstaampplugin PRIVATE drm/gst)
+	target_include_directories (gstaamp PRIVATE drm/gst)
 	set(AAMP_COMMON_DEPENDENCIES "${AAMP_COMMON_DEPENDENCIES} -lIARMBus -lds -lsystemd")
 	if(CMAKE_USE_OPENCDM)
 		message("CMAKE_USE_OPENCDM set")
@@ -143,7 +143,7 @@ else()
 	message("CMAKE_DASH_DRM not set")
 endif()
 
-target_link_libraries (gstaampplugin aamp ${AAMP_COMMON_DEPENDENCIES} )
+target_link_libraries (gstaamp aamp ${AAMP_COMMON_DEPENDENCIES} )
 
 if(CMAKE_AAMP_CC_ENABLED)
 	message("CMAKE_AAMP_CC_ENABLED set")
@@ -168,12 +168,12 @@ if(CMAKE_USE_SECCLIENT)
 	set(LIBAAMP_DEFINES "${LIBAAMP_DEFINES} -DUSE_SECCLIENT")
 endif()
 
-install(TARGETS gstaampplugin DESTINATION lib/gstreamer-1.0)
+install(TARGETS gstaamp DESTINATION lib/gstreamer-1.0)
 
 if(CMAKE_WPEWEBKIT_JSBINDINGS)
 	message("CMAKE_WPEWEBKIT_JSBINDINGS set")
-	target_link_libraries (gstaampplugin aampjsbindings)
+	target_link_libraries (gstaamp aampjsbindings)
 	set(LIBAAMP_DEFINES "${LIBAAMP_DEFINES} -DAAMP_JSCONTROLLER_ENABLED")
 endif()
 
-set_target_properties(gstaampplugin PROPERTIES COMPILE_FLAGS "${LIBAAMP_DEFINES}")
+set_target_properties(gstaamp PROPERTIES COMPILE_FLAGS "${LIBAAMP_DEFINES}")
