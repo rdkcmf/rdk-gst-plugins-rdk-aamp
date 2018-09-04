@@ -17,6 +17,12 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaamp.cpp
+ * @brief AAMP gstreamer plugin definitions
+ */
+
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -59,14 +65,26 @@ extern "C"
 }
 #endif
 
-enum
+/**
+ * @enum GstAampProperties
+ * @brief Placeholder for gstaamp  properties
+ */
+enum GstAampProperties
 {
 	PROP_0
 };
 
+/**
+ * @class GstAampStreamer
+ * @brief Handle media data/configuration/events from AAMP core
+ */
 class GstAampStreamer : public StreamSink, public AAMPEventListener
 {
 public:
+	/**
+	 * @brief GstAampStreamer Constructor
+	 * @param[in] aamp Associated gstaamp pointer
+	 */
 	GstAampStreamer(GstAamp * aamp)
 	{
 		this->aamp = aamp;
@@ -78,6 +96,12 @@ public:
 		gst_segment_init(&segment, GST_FORMAT_TIME);
 	}
 
+
+	/**
+	 * @brief Configures gstaamp with stream output formats
+	 * @param[in] format Output format of main media
+	 * @param[in] audioFormat Output format of audio if present
+	 */
 	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat)
 	{
 		GST_INFO_OBJECT(aamp, "Enter format = %d audioFormat = %d", format, audioFormat);
@@ -86,6 +110,12 @@ public:
 		gst_aamp_configure(aamp, format, audioFormat);
 	}
 
+
+	/**
+	 * @brief Sends pending events to stream's src pad
+	 * @param[in] stream Media stream to which events are sent
+	 * @param[in] pts Presentation time-stamp
+	 */
 	void SendPendingEvents(media_stream* stream, GstClockTime pts)
 	{
 		if (stream->streamStart)
@@ -133,7 +163,7 @@ public:
 			segment.position = 0;
 			segment.rate = 1.0;
 			segment.applied_rate = rate;
-			GST_INFO_OBJECT(aamp, "Sending segment event. start %" G_GUINT64_FORMAT " stop %" G_GUINT64_FORMAT " rate %f\n", segment.start, segment.stop, segment.rate);
+			GST_INFO_OBJECT(aamp, "Sending segment event. start %" G_GUINT64_FORMAT " stop %" G_GUINT64_FORMAT" rate %f\n", segment.start, segment.stop, segment.rate);
 			GstEvent* event = gst_event_new_segment (&segment);
 #else
 			GstEvent* event = gst_event_new_new_segment(FALSE, 1.0, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
@@ -147,6 +177,17 @@ public:
 		stream->eventsPending = FALSE;
 	}
 
+
+	/**
+	 * @brief Sends stream data to src pad
+	 * @param[in] mediaType MediaType of data
+	 * @param[in] ptr Data buffer
+	 * @param[in] len0 Size of data buffer
+	 * @param[in] fpts PTS of buffer in seconds
+	 * @param[in] fdts DTS of buffer in seconds
+	 * @param[in] fDuration Duration of buffer in seconds
+	 * @note Caller owns ptr, may free on return
+	 */
 	void Send(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
 		GstPad* srcpad = NULL;
@@ -192,7 +233,7 @@ public:
 				GstClockTime curr = gst_clock_get_time(clock);
 				printf(" provided clock time %lu diff (pts - curr) %lu (%lu ms)", (unsigned long)curr, (unsigned long)(pts-curr), (unsigned long)(pts-curr)/GST_MSECOND);
 			}
-			logprintf("\n");
+			printf("\n");
 		}
 #endif
 
@@ -255,6 +296,16 @@ public:
 		GST_TRACE_OBJECT(aamp, "Exit");
 	}
 
+
+	/**
+	 * @brief Sends stream data to src pad
+	 * @param[in] mediaType MediaType of data
+	 * @param[in] pBuffer Data buffer
+	 * @param[in] fpts PTS of buffer in seconds
+	 * @param[in] fdts DTS of buffer in seconds
+	 * @param[in] fDuration Duration of buffer in seconds
+	 * @note Ownership of pBuffer is transferred
+	 */
 	void Send(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration)
 	{
 		GstPad* srcpad = NULL;
@@ -354,6 +405,11 @@ public:
 		GST_TRACE_OBJECT(aamp, "Exit");
 	}
 
+
+	/**
+	 * @brief Updates internal rate
+	 * @param[in] rate Rate at which media is played back
+	 */
 	void UpdateRate(gdouble rate)
 	{
 		if ( rate != this->rate)
@@ -361,6 +417,11 @@ public:
 			this->rate = rate;
 		}
 	}
+
+	/**
+	 * @brief Handles stream specific EOS notification from aamp core
+	 * @param[in] type Media type of the stream
+	 */
 	void EndOfStreamReached(MediaType type)
 	{
 		GstEvent* event = gst_event_new_eos();
@@ -372,6 +433,10 @@ public:
 			}
 		}
 	}
+
+	/**
+	 * @brief Handles EOS notification from aamp core
+	 */
 	void EOS()
 	{
 		GstEvent* event = gst_event_new_eos();
@@ -387,12 +452,24 @@ public:
 			GST_ERROR_OBJECT(aamp, "Send EOS failed\n");
 		}
 	}
+
+	/**
+	 * @brief Handles Discontinuity of stream
+	 * @param[in] mediaType type of stream
+	 * @retval always false
+	 */
 	bool Discontinuity(MediaType mediaType)
 	{
 		aamp->stream[mediaType].resetPosition = TRUE;
 		aamp->stream[mediaType].eventsPending = TRUE;
 		return false;
 	}
+
+	/**
+	 * @brief Flush gstaamp streams
+	 * @param[in] position seek position
+	 * @param[in] rate playback rate
+	 */
 	void Flush(double position, float rate)
 	{
 		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
@@ -451,6 +528,12 @@ G_DEFINE_TYPE_WITH_CODE (GstAamp, gst_aamp, GST_TYPE_ELEMENT, AAMP_TYPE_INIT_COD
 
 #ifdef AAMP_CC_ENABLED
 // initialize cc
+
+/**
+ * @brief CC handler thread
+ * @param[in] data Pointer to gstaamp
+ * @retval
+ */
 gpointer aamp_cc_handler_func(gpointer data)
 {
 	//Retrieve CC handle
@@ -528,6 +611,11 @@ gpointer aamp_cc_handler_func(gpointer data)
 }
 
 // video decoder handle is available after brcmvideodecoder instantiated
+
+/**
+ * @brief Starts CC
+ * @param[in] aamp gstaamp pointer
+ */
 static void gst_aamp_cc_start(GstAamp * aamp)
 {
 	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_cc_start \n");
@@ -557,6 +645,11 @@ static void gst_aamp_cc_start(GstAamp * aamp)
 	GST_DEBUG_OBJECT(aamp, "Exit gst_aamp_cc_start \n");
 }
 
+
+/**
+ * @brief Stops CC
+ * @param[in] aamp  gstaamp pointer
+ */
 static void gst_aamp_cc_stop(GstAamp * aamp)
 {
 	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_cc_stop \n");
@@ -581,6 +674,11 @@ static void gst_aamp_cc_stop(GstAamp * aamp)
 
 #endif // AAMP_CC_ENABLED
 
+
+/**
+ * @brief Updates audio src pad states.
+ * @param[in] aamp gstaamp pointer
+ */
 static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 {
 #ifndef AAMP_DISCARD_AUDIO_TRACK
@@ -627,6 +725,13 @@ static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 #endif
 }
 
+
+/**
+ * @brief Creates GstCaps corresponding to stream format
+ * @param[in] format Output format of stream
+ * @retval GstCaps corresponding to stream format
+ * @note Caller shall free returned caps
+ */
 static GstCaps* GetGstCaps(StreamOutputFormat format)
 {
 	GstCaps * caps = NULL;
@@ -654,9 +759,6 @@ static GstCaps* GetGstCaps(StreamOutputFormat format)
 		case FORMAT_VIDEO_ES_H264:
 			caps = gst_caps_new_simple ("video/x-h264", NULL, NULL);
 			break;
-		case FORMAT_VIDEO_ES_HEVC:
-			caps = gst_caps_new_simple ("video/x-h265", NULL, NULL);
-			break;
 		case FORMAT_VIDEO_ES_MPEG2:
 			caps = gst_caps_new_simple ("video/mpeg",
 					"mpegversion", G_TYPE_INT, 2,
@@ -671,6 +773,12 @@ static GstCaps* GetGstCaps(StreamOutputFormat format)
 	return caps;
 }
 
+/**
+ * @brief Configures gstaamp with stream output formats
+ * @param[in] aamp gstaamp pointer
+ * @param[in] format Output format of main media
+ * @param[in] audioFormat Output format of audio if present
+ */
 static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, StreamOutputFormat audioFormat)
 {
 	GstCaps *caps;
@@ -731,6 +839,11 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 	g_mutex_unlock (&aamp->mutex);
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to initialize class.
+ * @param[in] klass GstAampClass pointer
+ */
 static void gst_aamp_class_init(GstAampClass * klass)
 {
 	GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
@@ -756,6 +869,11 @@ static void gst_aamp_class_init(GstAampClass * klass)
 	element_class->query = GST_DEBUG_FUNCPTR(gst_aamp_query);
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to initialize element.
+ * @param[in] aamp gstaamp pointer
+ */
 static void gst_aamp_init(GstAamp * aamp)
 {
 	GST_AAMP_LOG_TIMING("Enter\n");
@@ -779,6 +897,11 @@ static void gst_aamp_init(GstAamp * aamp)
 	aamp->context->Discontinuity(eMEDIATYPE_AUDIO);
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to finalize element.
+ * @param[in] object gstaamp pointer
+ */
 void gst_aamp_finalize(GObject * object)
 {
 	GstAamp *aamp = GST_AAMP(object);
@@ -824,8 +947,8 @@ void gst_aamp_finalize(GObject * object)
 }
 
 /**
- * @fn void aampClientCallback()
- * @brief This function receives asynchronous events from AAMP
+ * @brief This function processes asynchronous events from aamp core
+ * @param[in] e reference of event
  */
 void GstAampStreamer::Event(const AAMPEvent & e )
 {
@@ -881,6 +1004,12 @@ void GstAampStreamer::Event(const AAMPEvent & e )
 		}
 }
 
+
+/**
+ * @brief Queries URI to upstream element
+ * @param[in] aamp gstaamp pointer
+ * @retval
+ */
 static gboolean gst_aamp_query_uri(GstAamp *aamp)
 {
 	gboolean ret = TRUE;
@@ -902,6 +1031,11 @@ static gboolean gst_aamp_query_uri(GstAamp *aamp)
 	return ret;
 }
 
+
+/**
+ * @brief Tune asynchronously
+ * @param[in] aamp gstaamp pointer
+ */
 static void gst_aamp_tune_async(GstAamp *aamp)
 {
 	g_mutex_lock(&aamp->mutex);
@@ -911,6 +1045,12 @@ static void gst_aamp_tune_async(GstAamp *aamp)
 	aamp->player_aamp->Tune(aamp->location);
 }
 
+
+/**
+ * @brief Waits until aamp is configured
+ * @param[in] aamp gstaamp pointer
+ * @retval TRUE if configured, FALSE on error
+ */
 static gboolean gst_aamp_configured(GstAamp *aamp)
 {
 	gboolean ret = FALSE;
@@ -924,6 +1064,12 @@ static gboolean gst_aamp_configured(GstAamp *aamp)
 	return ret;
 }
 
+
+/**
+ * @brief Waits until gstaamp state is ready
+ * @param[in] aamp gstaamp pointer
+ * @retval TRUE if ready, FALSE on error
+ */
 static gboolean gst_aamp_ready(GstAamp *aamp)
 {
 	gboolean ret = FALSE;
@@ -937,6 +1083,12 @@ static gboolean gst_aamp_ready(GstAamp *aamp)
 	return ret;
 }
 
+
+/**
+ * @brief Idle task to report tune complete
+ * @param[in] user_data  gstaamp pointer
+ * @retval G_SOURCE_REMOVE if logging done, G_SOURCE_CONTINUE if state is not playing
+ */
 static gboolean gst_aamp_report_on_tune_done(gpointer user_data)
 {
 	GstAamp *aamp = (GstAamp *) user_data;
@@ -959,6 +1111,13 @@ static gboolean gst_aamp_report_on_tune_done(gpointer user_data)
 	}
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to change element state.
+ * @param[in] element gstaamp pointer
+ * @param[in] trans state
+ * @retval status of state change operation
+ */
 static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstStateChange trans)
 {
 	GstAamp *aamp;
@@ -1100,6 +1259,13 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 	return ret;
 }
 
+
+/**
+ * @brief Element query override .invoked by gstreamer core
+ * @param[in] element gstaamp pointer
+ * @param[in] query gstreamer query
+ * @retval TRUE if query is handled, FALSE if not handled
+ */
 static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 {
 	GstAamp *aamp = GST_AAMP(element);
@@ -1130,7 +1296,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %"G_GUINT64_FORMAT"\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1163,6 +1329,14 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 	return ret;
 }
 
+
+/**
+ * @brief Chain function to handle buffer from source elements
+ * @param[in] pad sink pad
+ * @param[in] parent gstaamp pointer
+ * @param[in] buffer Data from upstream
+ * @retval status of operation
+ */
 static GstFlowReturn gst_aamp_sink_chain(GstPad * pad, GstObject *parent, GstBuffer * buffer)
 {
 	GstAamp *aamp;
@@ -1172,6 +1346,13 @@ static GstFlowReturn gst_aamp_sink_chain(GstPad * pad, GstObject *parent, GstBuf
 	return GST_FLOW_OK;
 }
 
+/**
+ * @brief Event listener on sink pad to be invoked by gstreamer core
+ * @param[in] pad sink pad
+ * @param[in] parent gstaamp pointer
+ * @param[in] event gstreamer event
+ * @retval TRUE if event is handled, FALSE if not handled
+ */
 static gboolean gst_aamp_sink_event(GstPad * pad, GstObject *parent, GstEvent * event)
 {
 	gboolean res = FALSE;
@@ -1200,6 +1381,13 @@ static gboolean gst_aamp_sink_event(GstPad * pad, GstObject *parent, GstEvent * 
 	return res;
 }
 
+/**
+ * @brief src pad query listener override to be invoked by gstreamer core
+ * @param[in] pad src pad
+ * @param[in] parent gstaamp pointer
+ * @param[in] query gstreamer query
+ * @retval TRUE if query is handled, FALSE if not query
+ */
 static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * query)
 {
 	gboolean ret = FALSE;
@@ -1236,7 +1424,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			if (format == GST_FORMAT_TIME)
 			{
 				gint64 posMs = aamp->player_aamp->aamp->GetPositionMs();
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %" G_GUINT64_FORMAT " seconds\n", posMs/1000);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %"G_GUINT64_FORMAT" seconds\n", posMs/1000);
 				gst_query_set_position(query, GST_FORMAT_TIME, (posMs*GST_MSECOND ));
 				ret = TRUE;
 			}
@@ -1251,7 +1439,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %"G_GUINT64_FORMAT"\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1297,6 +1485,14 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 	return ret;
 }
 
+
+/**
+ * @brief Event listener on src pad to be invoked by gstreamer core
+ * @param[in] pad src pad
+ * @param[in] parent gstaamp pointer
+ * @param[in] event gstreamer event
+ * @retval TRUE if event is handled, FALSE if not handled
+ */
 static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * event)
 {
 	gboolean res = FALSE;
@@ -1318,7 +1514,7 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 			gst_event_parse_seek(event, &rate, &format, &flags, &start_type, &start, &stop_type, &stop);
 			if (format == GST_FORMAT_TIME)
 			{
-				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %" G_GINT64_FORMAT "\n", rate, start );
+				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %"G_GINT64_FORMAT"\n", rate, start );
 				if (flags & GST_SEEK_FLAG_FLUSH)
 				{
 					GST_DEBUG_OBJECT(aamp, "flush start");

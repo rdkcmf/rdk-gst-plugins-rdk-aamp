@@ -17,6 +17,12 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampsrc.h
+ * @brief  aampsrc gstreamer element specific declarations
+ */
+
+
 #ifndef _GST_AAMPSRC_H_
 #define _GST_AAMPSRC_H_
 
@@ -31,9 +37,21 @@ G_BEGIN_DECLS
 #define GST_IS_AAMPSRC(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_AAMPSRC))
 #define GST_IS_AAMPSRC_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_AAMPSRC))
 
+/**
+ * @struct GstAampSrc 
+ * @brief AampSrc GstElement extension
+ */
 typedef struct _GstAampSrc GstAampSrc;
+/**
+ * @struct GstAampSrcclass
+ * @brief AampSrc GstElementClass extension
+ */
 typedef struct _GstAampSrcClass GstAampSrcClass;
 
+/**
+ * @struct _GstAampSrc
+ * @brief AampSrc GstElement extension
+ */
 struct _GstAampSrc
 {
 	GstPushSrc base_aampsrc;
@@ -45,11 +63,20 @@ struct _GstAampSrc
 //	GstPad *srcpad;
 };
 
+/**
+ * @struct _GstAampSrcClass
+ * @brief  AampSrc GstElementClass extension
+ */
 struct _GstAampSrcClass
 {
 	GstPushSrcClass base_aampsrc_class;
 };
 
+
+/**
+ * @brief Get type of aampsrc gstreamer element
+ * @retval type of aampsrc element
+ */
 GType gst_aampsrc_get_type(void);
 
 G_END_DECLS

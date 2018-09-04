@@ -17,6 +17,11 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampplayreadydecryptor.cpp
+ * @brief aamp Playready decryptor plugin definitions
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -62,8 +67,12 @@ static GstStaticPadTemplate gst_aampplayreadydecryptor_dummy_sink_template =
         GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
                 GST_STATIC_CAPS("playready/x-unused"));
 
-
-static void gst_aampplayreadydecryptor_class_init(GstAampplayreadydecryptorClass * klass)
+/**
+ * @brief Playready decryptor class initialization
+ * @param klass Gstreamer Class
+ */
+static void gst_aampplayreadydecryptor_class_init(
+        GstAampplayreadydecryptorClass * klass)
 {
 	GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
     GstElementClass* elementClass = GST_ELEMENT_CLASS(klass);
@@ -84,11 +93,20 @@ static void gst_aampplayreadydecryptor_class_init(GstAampplayreadydecryptorClass
 	        "comcast");
 }
 
+/**
+ * @brief Playready decryptor element initialization
+ * @param aampplayreadydecryptor playready decryptor element pointer
+ */
 static void gst_aampplayreadydecryptor_init(GstAampplayreadydecryptor *aampplayreadydecryptor)
 {
     DEBUG_FUNC();
 }
 
+
+/**
+ * @brief Playready decryptor element termination
+ * @param object playready decryptor element pointer
+ */
 static void gst_aampplayreadydecryptor_finalize(GObject * object)
 {
     DEBUG_FUNC();

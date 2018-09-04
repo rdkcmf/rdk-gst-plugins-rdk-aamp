@@ -326,7 +326,7 @@ static void gst_add_svp_meta_data(GstBuffer* gstBuffer, uint8_t* pOpaqueData, ui
                         || !gst_byte_reader_get_uint32_be(reader, &nBytesEncrypted))
                 {
                     // fail
-                    logprintf("%s ---- ERROR ----  Failed to acquire subsample data at index %d (%d, %d)\n",
+                    printf("%s ---- ERROR ----  Failed to acquire subsample data at index %d (%d, %d)\n",
                             __FUNCTION__, i, nBytesClear, nBytesEncrypted);
                     break;
                 }
@@ -348,7 +348,7 @@ static void gst_add_svp_meta_data(GstBuffer* gstBuffer, uint8_t* pOpaqueData, ui
     gst_buffer_add_brcm_svp_meta(gstBuffer, ptr);
 
 #else
-    logprintf("%s USE_SAGE_SVP not defined\n", __FUNCTION__);
+    printf("%s USE_SAGE_SVP not defined\n", __FUNCTION__);
 #endif
 
     return;
@@ -384,9 +384,6 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     gpointer pbData = NULL;
     uint32_t cbData = 0;
     uint8_t * pOpaqueData = NULL;
-
-    bool fillBucket = false;
-    ProfilerBucketType bucketType;
 
     GST_DEBUG_OBJECT(aampcdmidecryptor, "Processing buffer");
 
@@ -582,18 +579,6 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	cbData += sizeof(Rpc_Secbuf_Info);
 #endif
 
-    if (!aampcdmidecryptor->firstsegprocessed && aampcdmidecryptor->aamp)
-    {
-        fillBucket = true;
-        bucketType =
-            (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)?PROFILE_BUCKET_DECRYPT_VIDEO:PROFILE_BUCKET_DECRYPT_AUDIO;
-    }
-
-    if (fillBucket)
-    {
-        aampcdmidecryptor->aamp->profiler.ProfileBegin(bucketType);
-    }
-
     errorCode = aampcdmidecryptor->drmSession->decrypt(
             static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
             (uint8_t *)pbData, cbData, &pOpaqueData);
@@ -602,20 +587,34 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     {
         GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed");
         result = GST_FLOW_ERROR;
-        if (fillBucket)
-        {
-            aampcdmidecryptor->aamp->profiler.ProfileError(bucketType);
-        }
         goto free_resources;
     }
-
-    if (fillBucket)
+    else
     {
-        aampcdmidecryptor->aamp->profiler.ProfileEnd(bucketType);
-        aampcdmidecryptor->firstsegprocessed = true;
+        if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+        {
+            GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for Audio packets");
+        }
+        else
+        {
+            GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for Video packets");
+        }
     }
 
-    GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for %s packets",(aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)?"Audio":"Video");
+    if (!aampcdmidecryptor->firstsegprocessed
+            && aampcdmidecryptor->aamp)
+    {
+        if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
+        {
+            aampcdmidecryptor->aamp->profiler.ProfileEnd(
+                    PROFILE_BUCKET_DECRYPT_VIDEO);
+        } else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+        {
+            aampcdmidecryptor->aamp->profiler.ProfileEnd(
+                    PROFILE_BUCKET_DECRYPT_AUDIO);
+        }
+        aampcdmidecryptor->firstsegprocessed = true;
+    }
 
     if(pOpaqueData)
     {
@@ -662,6 +661,21 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     }
 
     free_resources:
+
+    if (!aampcdmidecryptor->firstsegprocessed
+            && aampcdmidecryptor->aamp)
+    {
+        if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
+        {
+            aampcdmidecryptor->aamp->profiler.ProfileError(
+                    PROFILE_BUCKET_DECRYPT_VIDEO);
+        } else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+        {
+            aampcdmidecryptor->aamp->profiler.ProfileError(
+                    PROFILE_BUCKET_DECRYPT_AUDIO);
+        }
+        aampcdmidecryptor->firstsegprocessed = true;
+    }
 
     if (bufferMapped)
         gst_buffer_unmap(buffer, &map);
@@ -826,16 +840,14 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             {
                 aampcdmidecryptor->aamp->profiler.ProfileError(
                         PROFILE_BUCKET_LA_TOTAL);
+                if(AAMP_TUNE_FAILURE_UNKNOWN != failureReason)
+                {
+                    aampcdmidecryptor->aamp->SendErrorEvent(failureReason);
+                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failureReason);
+                }
             }
-            GST_ERROR_OBJECT(aampcdmidecryptor,
-                    "Failed to create DRM Session\n");
-            if(aampcdmidecryptor->aamp->DownloadsAreEnabled())
-            {
-                aampcdmidecryptor->aamp->DisableDownloads();
-                aampcdmidecryptor->aamp->SendErrorEvent(failureReason);
-            }
-            aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failureReason);
-            result = FALSE;
+            GST_ERROR_OBJECT(aampcdmidecryptor,"Failed to create DRM Session\n");
+            result = TRUE;
         } else
         {
             aampcdmidecryptor->streamReceived = TRUE;
@@ -844,6 +856,21 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
                 aampcdmidecryptor->aamp->profiler.ProfileEnd(
                         PROFILE_BUCKET_LA_TOTAL);
             }
+
+            if (!aampcdmidecryptor->firstsegprocessed
+                    && aampcdmidecryptor->aamp)
+            {
+                if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
+                {
+                    aampcdmidecryptor->aamp->profiler.ProfileBegin(
+                            PROFILE_BUCKET_DECRYPT_VIDEO);
+                } else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+                {
+                    aampcdmidecryptor->aamp->profiler.ProfileBegin(
+                            PROFILE_BUCKET_DECRYPT_AUDIO);
+                }
+            }
+
             result = TRUE;
         }
         g_cond_signal(&aampcdmidecryptor->condition);

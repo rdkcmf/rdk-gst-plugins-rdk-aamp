@@ -17,6 +17,12 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaamp.h
+ * @brief AAMP Gstreamer plugin declarations
+ */
+
+
 #ifndef _GST_AAMP_H_
 #define _GST_AAMP_H_
 
@@ -29,12 +35,28 @@ G_BEGIN_DECLS
 #define GST_IS_AAMP(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_AAMP))
 #define GST_IS_AAMP_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_AAMP))
 
+/**
+ * @struct GstAamp
+ * @brief AAMP GstElement extension
+ */
 typedef struct _GstAamp GstAamp;
+
+/**
+ * @struct GstAampClass
+ * @brief AAMP GstElementClass extension
+ */
 typedef struct _GstAampClass GstAampClass;
 
+/**
+ * @struct GstAampStreamer;
+ * @brief forward declaration
+ */
 struct GstAampStreamer;
-class PlayerInstanceAAMP;
 
+/**
+ * @enum _GstAampState {
+ * @brief State of element
+ */
 enum _GstAampState {
 	GST_AAMP_NONE,
 	GST_AAMP_TUNING,
@@ -44,8 +66,16 @@ enum _GstAampState {
 	GST_AAMP_STATE_ERROR
 };
 
+/**
+ * @enum GstAampState
+ * @brief  State of element
+ */
 typedef enum _GstAampState GstAampState;
 
+/**
+ * @struct media_stream
+ * @brief State of a media stream output
+ */
 struct media_stream
 {
 	GstPad *srcpad;
@@ -56,6 +86,10 @@ struct media_stream
 	GstCaps *caps;
 };
 
+/**
+ * @struct _GstAamp
+ * @brief AAMP GstElement extension
+ */
 struct _GstAamp
 {
 	GstElement parent_aamp;
@@ -78,14 +112,23 @@ struct _GstAamp
 	gboolean quit_cc_handler;
 #endif
 
-	PlayerInstanceAAMP* player_aamp;
+	class PlayerInstanceAAMP* player_aamp;
 };
 
+/**
+ * @struct _GstAampClass
+ * @brief AAMP GstElementClass extension
+ */
 struct _GstAampClass
 {
 	GstElementClass base_aamp_class;
 };
 
+
+/**
+ * @brief Get type of aamp gstreamer element
+ * @retval type of aamp element
+ */
 GType gst_aamp_get_type(void);
 
 G_END_DECLS

@@ -17,6 +17,12 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampsrc.cpp
+ * @brief aampsrc gstreamer element specific defines
+ */
+
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -37,6 +43,10 @@ static void gst_aampsrc_get_property(GObject * object, guint property_id, GValue
 static void gst_aampsrc_finalize(GObject * object);
 static gboolean gst_aampsrc_query(GstBaseSrc * element, GstQuery * query);
 
+/**
+ * @enum GstAampsrcProperties
+ * @brief aampsrc properties
+ */
 enum
 {
 	PROP_0,
@@ -46,6 +56,11 @@ enum
 static GstStaticPadTemplate gst_aampsrc_src_template = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
 		GST_STATIC_CAPS("application/x-aamp;"));
 
+/**
+ * @brief get_uri implementation for URI handler interface
+ * @param[in] handler URI handler
+ * @retval uri of asset
+ */
 static gchar *gst_aamp_uriif_get_uri(GstURIHandler * handler)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(handler);
@@ -59,6 +74,13 @@ static gchar *gst_aamp_uriif_get_uri(GstURIHandler * handler)
 	return ret;
 }
 
+
+/**
+ * @brief Set URI of asset
+ * @param[in] aampsrc pointer of gstaampsrc
+ * @param[in] uri URI to be set
+ * @retval TRUE on success, FALSE on failure
+ */
 static gboolean gst_aamp_set_location(GstAampSrc *aampsrc, const gchar * uri)
 {
 	gboolean ret = TRUE;
@@ -85,23 +107,45 @@ static gboolean gst_aamp_set_location(GstAampSrc *aampsrc, const gchar * uri)
 	return ret;
 }
 
+/**
+ * @brief set_uri implementation for URI handler interface
+ * @param[in] handler URI handler
+ * @param[in] uri URI to be set
+ * @param[in] error
+ * @retval TRUE on success, FALSE on failure
+ */
 static gboolean gst_aamp_uriif_set_uri(GstURIHandler * handler, const gchar * uri, GError **error)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(handler);
 	return gst_aamp_set_location (aampsrc, uri );
 }
 
+/**
+ * @brief get_protocols implementation for URI handler interface
+ * @param[in] type unused
+ * @retval protocols supported
+ */
 static const gchar * const *gst_aamp_uriif_get_protocols(GType type)
 {
 	static const gchar *protocols[] = { "aamp", "aamps", NULL };
 	return protocols;
 }
 
+/**
+ * @brief get_type implementation for URI handler interface
+ * @param[in] type unused
+ * @retval GST_URI_SRC
+ */
 static GstURIType gst_aamp_uriif_get_type(GType type)
 {
 	return GST_URI_SRC;
 }
 
+/**
+ * @brief initialize URI handler interface
+ * @param[out] interface URI handler interface
+ * @param[in] interface_data Unused
+ */
 static void gst_aamp_uriif_handler_init(gpointer interface, gpointer interface_data)
 {
 	GstURIHandlerInterface *iface = (GstURIHandlerInterface *) interface;
@@ -121,6 +165,14 @@ static void gst_aamp_uriif_handler_init(gpointer interface, gpointer interface_d
 /* class initialization */
 G_DEFINE_TYPE_WITH_CODE (GstAampSrc, gst_aampsrc, GST_TYPE_PUSH_SRC, AAMP_TYPE_INIT_CODE);
 
+/**
+ * @brief Override of basesrc_class->create, stub
+ * @param[in] src pointer of gstaampsrc
+ * @param[in] offset Unused
+ * @param[in] size Unused
+ * @param[out] buf dummy buffer
+ * @retval
+ */
 static GstFlowReturn gst_aampsrc_create(GstBaseSrc *src, guint64 offset, guint size,
         GstBuffer **buf)
 {
@@ -143,6 +195,13 @@ static GstFlowReturn gst_aampsrc_create(GstBaseSrc *src, guint64 offset, guint s
 	return ret;
 }
 
+
+/**
+ * @brief Override of element_class->send_event, pass all events to connected Pad
+ * @param[in] element pointer of gstaampsrc
+ * @param[in] event gstreamer event
+ * @retval status of operation
+ */
 static gboolean gst_aampsrc_send_event(GstElement * element, GstEvent * event)
 {
 	gboolean ret = TRUE;
@@ -159,6 +218,11 @@ static gboolean gst_aampsrc_send_event(GstElement * element, GstEvent * event)
 	return ret;
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to initialize class.
+ * @param[in] klass GstAampSrcClass pointer
+ */
 static void gst_aampsrc_class_init(GstAampSrcClass * klass)
 {
 	GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
@@ -183,6 +247,11 @@ static void gst_aampsrc_class_init(GstAampSrcClass * klass)
 	element_class->send_event = GST_DEBUG_FUNCPTR(gst_aampsrc_send_event);
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to initialize element.
+ * @param[in] aampsrc gstaampsrc pointer
+ */
 static void gst_aampsrc_init(GstAampSrc * aampsrc)
 {
 	aampsrc->location = NULL;
@@ -191,6 +260,14 @@ static void gst_aampsrc_init(GstAampSrc * aampsrc)
 	g_cond_init (&aampsrc->block_push_cond);
 }
 
+
+/**
+ * @brief Set element property. Invoked by gstreamer core
+ * @param[in] object gstaampsrc pointer
+ * @param[in] property_id id of property
+ * @param[in] value contains property value
+ * @param[in] pspec Unused
+ */
 void gst_aampsrc_set_property(GObject * object, guint property_id, const GValue * value, GParamSpec * pspec)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(object);
@@ -213,6 +290,14 @@ void gst_aampsrc_set_property(GObject * object, guint property_id, const GValue 
 	}
 }
 
+
+/**
+ * @brief Get element property. Invoked by gstreamer core
+ * @param[in] object gstaampsrc pointer
+ * @param[in] property_id id of property
+ * @param[out] value contains property value
+ * @param[in] pspec Unused
+ */
 void gst_aampsrc_get_property(GObject * object, guint property_id, GValue * value, GParamSpec * pspec)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(object);
@@ -237,6 +322,11 @@ void gst_aampsrc_get_property(GObject * object, guint property_id, GValue * valu
 	}
 }
 
+
+/**
+ * @brief Invoked by gstreamer core to finalize element.
+ * @param[in] object gstaampsrc pointer
+ */
 void gst_aampsrc_finalize(GObject * object)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(object);
@@ -255,6 +345,12 @@ void gst_aampsrc_finalize(GObject * object)
 }
 
 
+/**
+ * @brief Invoked by gstreamer core to change element state.
+ * @param[in] element gstaampsrc pointer
+ * @param[in] trans state
+ * @retval status of state change operation
+ */
 static GstStateChangeReturn gst_aampsrc_change_state(GstElement * element, GstStateChange trans)
 {
 	GstStateChangeReturn ret;
@@ -278,6 +374,13 @@ static GstStateChangeReturn gst_aampsrc_change_state(GstElement * element, GstSt
 	return ret;
 }
 
+
+/**
+ * @brief Element query override .invoked by gstreamer core
+ * @param[in] element gstaampsrc pointer
+ * @param[in] query gstreamer query
+ * @retval TRUE if query is handled, FALSE if not handled
+ */
 static gboolean gst_aampsrc_query(GstBaseSrc * element, GstQuery * query)
 {
 	GstAampSrc *aampsrc = GST_AAMPSRC(element);

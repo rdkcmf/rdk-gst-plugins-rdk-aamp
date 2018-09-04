@@ -17,6 +17,12 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampwidevinedecryptor.h
+ * @brief aamp Widevine decryptor plugin declarations
+ */
+
+
 #ifndef _GST_AAMPWIDEVINEDECRYPTOR_H_
 #define _GST_AAMPWIDEVINEDECRYPTOR_H_
 
@@ -46,17 +52,29 @@ typedef struct _GstAampwidevinedecryptor GstAampwidevinedecryptor;
 typedef struct _GstAampwidevinedecryptorClass GstAampwidevinedecryptorClass;
 //typedef struct _GstAampwidevinedecryptorPrivate GstAampwidevinedecryptorPrivate;
 
+/**
+ * @struct _GstAampwidevinedecryptor
+ * @brief GstElement structure override for Widevine decryptor
+ */
 struct _GstAampwidevinedecryptor
 {
     GstAampCDMIDecryptor                parent;
 //    GstAampwidevinedecryptorPrivate    priv;
 };
 
+/**
+ * @struct _GstAampwidevinedecryptorClass
+ * @brief GstElementClass structure override for Widevine decryptor
+ */
 struct _GstAampwidevinedecryptorClass
 {
     GstAampCDMIDecryptorClass parentClass;
 };
 
+/**
+ * @brief Get type of Widevine decryptor
+ * @retval Type of Widevine decryptor
+ */
 GType gst_aampwidevinedecryptor_get_type (void);
 
 G_END_DECLS

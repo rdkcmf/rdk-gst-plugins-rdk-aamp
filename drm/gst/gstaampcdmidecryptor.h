@@ -38,6 +38,10 @@ G_BEGIN_DECLS
 typedef struct _GstAampCDMIDecryptor GstAampCDMIDecryptor;
 typedef struct _GstAampCDMIDecryptorClass GstAampCDMIDecryptorClass;
 
+/**
+ * @struct _GstAampCDMIDecryptor
+ * @brief GstElement structure override for CDMI decryptor
+ */
 struct _GstAampCDMIDecryptor
 {
     GstBaseTransform                base_aampcdmidecryptor;
@@ -57,11 +61,19 @@ struct _GstAampCDMIDecryptor
     //GstBuffer*                    initDataBuffer;
 };
 
+/**
+ * @struct _GstAampCDMIDecryptorClass
+ * @brief GstElementClass structure override for CDMI decryptor
+ */
 struct _GstAampCDMIDecryptorClass
 {
     GstBaseTransformClass           base_aampcdmidecryptor_class;
 };
 
+/**
+ * @brief Get type of CDMI decryptor
+ * @retval Type of CDMI decryptor
+ */
 GType gst_aampcdmidecryptor_get_type (void);
 
 G_END_DECLS

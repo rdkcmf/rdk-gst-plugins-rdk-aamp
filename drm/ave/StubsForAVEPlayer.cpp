@@ -16,6 +16,13 @@
 * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 * Boston, MA 02110-1301, USA.
 */
+
+/**
+ * @file StubsForAVEPlayer.cpp
+ * @brief Various stubs required to compile AVE drm
+ * @note To be removed once avedrm is used instead of aveplayer
+ */
+
 #ifdef AAMP_STUBS_FOR_JS
 
 /*Stubs to link with libAVEPlayer.so*/

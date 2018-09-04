@@ -17,6 +17,11 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampinit.cpp
+ * @brief AAMP gstreamer plugin initialization
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -29,6 +34,12 @@
 #include "gstaampwidevinedecryptor.h"
 #endif
 
+
+/**
+ * @brief plugin_init , invoked by gstreamer core on load. Registers aamp gstreamer elements.
+ * @param plugin GstPlugin to which elements should be registered
+ * @retval status of operation
+ */
 static gboolean plugin_init(GstPlugin * plugin)
 {
 	gboolean ret = gst_element_register(plugin, "aamp", GST_RANK_MARGINAL, GST_TYPE_AAMP);

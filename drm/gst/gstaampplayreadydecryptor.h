@@ -17,6 +17,11 @@
 * Boston, MA 02110-1301, USA.
 */
 
+/**
+ * @file gstaampplayreadydecryptor.h
+ * @brief aamp Playready decryptor plugin declarations
+ */
+
 #ifndef _GST_AAMPPLAYREADYDECRYPTOR_H_
 #define _GST_AAMPPLAYREADYDECRYPTOR_H_
 
@@ -44,19 +49,30 @@ G_BEGIN_DECLS
 
 typedef struct _GstAampplayreadydecryptor GstAampplayreadydecryptor;
 typedef struct _GstAampplayreadydecryptorClass GstAampplayreadydecryptorClass;
-//typedef struct _GstAampplayreadydecryptorPrivate GstAampplayreadydecryptorPrivate;
 
+/**
+ * @struct _GstAampplayreadydecryptor
+ * @brief GstElement structure override for playready decryptor
+ */
 struct _GstAampplayreadydecryptor
 {
     GstAampCDMIDecryptor                parent;
-//    GstAampplayreadydecryptorPrivate    priv;
 };
 
+/**
+ * @struct _GstAampplayreadydecryptorClass
+ * @brief GstElementClass structure override for playready decryptor
+ */
 struct _GstAampplayreadydecryptorClass
 {
     GstAampCDMIDecryptorClass parentClass;
 };
 
+
+/**
+ * @brief Get type of playready decryptor
+ * @retval Type of playready decryptor
+ */
 GType gst_aampplayreadydecryptor_get_type (void);
 
 G_END_DECLS
