@@ -1,20 +1,20 @@
 /*
-* Copyright 2018 RDK Management
-*
-* This library is free software; you can redistribute it and/or
-* modify it under the terms of the GNU Library General Public
-* License as published by the Free Software Foundation, version 2
-* of the license.
-*
-* This library is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-* Library General Public License for more details.
-*
-* You should have received a copy of the GNU Library General Public
-* License along with this library; if not, write to the
-* Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
-* Boston, MA 02110-1301, USA.
+ * If not stated otherwise in this file or this component's license file the
+ * following copyright and licenses apply:
+ *
+ * Copyright 2018 RDK Management
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
 */
 
 #ifdef HAVE_CONFIG_H
@@ -44,6 +44,7 @@ struct Rpc_Secbuf_Info {
 
 GST_DEBUG_CATEGORY_STATIC ( gst_aampcdmidecryptor_debug_category);
 #define GST_CAT_DEFAULT  gst_aampcdmidecryptor_debug_category
+#define DECRYPT_FAILURE_THRESHOLD 5
 
 enum
 {
@@ -134,7 +135,9 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->aamp = NULL;
     aampcdmidecryptor->streamtype = eMEDIATYPE_MANIFEST;
     aampcdmidecryptor->firstsegprocessed = false;
-	aampcdmidecryptor->selectedProtection = NULL;
+    aampcdmidecryptor->selectedProtection = NULL;
+    aampcdmidecryptor->decryptFailCount = 0;
+    aampcdmidecryptor->notifyDecryptError = true;
 
     //GST_DEBUG("******************Init called**********************\n");
 }
@@ -583,14 +586,22 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
             static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
             (uint8_t *)pbData, cbData, &pOpaqueData);
 
-    if (errorCode < 0)
+    if (errorCode != 0)
     {
-        GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed");
-        result = GST_FLOW_ERROR;
+        GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
+        aampcdmidecryptor->decryptFailCount++;
+        if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError)
+        {
+          aampcdmidecryptor->notifyDecryptError = false;
+          GError *error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+          gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
+          result = GST_FLOW_ERROR;
+        }
         goto free_resources;
     }
     else
     {
+        aampcdmidecryptor->decryptFailCount = 0;
         if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
         {
             GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for Audio packets");
