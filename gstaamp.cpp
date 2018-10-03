@@ -102,7 +102,7 @@ public:
 	 * @param[in] format Output format of main media
 	 * @param[in] audioFormat Output format of audio if present
 	 */
-	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat)
+	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, bool bESChangeStatus)
 	{
 		GST_INFO_OBJECT(aamp, "Enter format = %d audioFormat = %d", format, audioFormat);
 		this->format = format;
