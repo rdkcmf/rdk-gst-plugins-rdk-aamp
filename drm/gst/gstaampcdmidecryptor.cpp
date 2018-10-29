@@ -593,7 +593,15 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
         if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError)
         {
           aampcdmidecryptor->notifyDecryptError = false;
-          GError *error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+          GError *error;
+          if(errorCode == HDCP_AUTHENTICATION_FAILURE)
+          {
+              error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Authentication Failure");
+          }
+          else
+          {
+              error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+          }
           gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
           result = GST_FLOW_ERROR;
         }
