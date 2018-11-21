@@ -912,9 +912,9 @@ void gst_aamp_finalize(GObject * object)
 		aamp->location = NULL;
 	}
 	g_mutex_clear (&aamp->mutex);
+	delete aamp->player_aamp;
 	delete aamp->context;
 	aamp->context=NULL;
-	delete aamp->player_aamp;
 	g_cond_clear (&aamp->state_changed);
 
 	if (aamp->stream[eMEDIATYPE_AUDIO].caps)
