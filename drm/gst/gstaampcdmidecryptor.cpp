@@ -1,21 +1,22 @@
 /*
- * If not stated otherwise in this file or this component's license file the
- * following copyright and licenses apply:
- *
- * Copyright 2018 RDK Management
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+* Copyright 2018 RDK Management
+*
+* This library is free software; you can redistribute it and/or
+* modify it under the terms of the GNU Library General Public
+* License as published by the Free Software Foundation, version 2
+* of the license.
+*
+* This library is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+* Library General Public License for more details.
+*
+* You should have received a copy of the GNU Library General Public
+* License along with this library; if not, write to the
+* Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+* Boston, MA 02110-1301, USA.
 */
+
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -845,12 +846,14 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         g_mutex_lock(&aampcdmidecryptor->mutex);
         GST_DEBUG("\n acquired lock for mutex\n");
         aampcdmidecryptor->sessionManager = new AampDRMSessionManager();
-        AAMPTuneFailure failureReason = AAMP_TUNE_FAILURE_UNKNOWN;
+	AAMPEvent e;
+	e.type = AAMP_EVENT_DRM_METADATA;
+        e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
         aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
                         reinterpret_cast<const char *>(systemId),
                         reinterpret_cast<const unsigned char *>(mapInfo.data),
-                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &failureReason);
+                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e);
 
         if (NULL == aampcdmidecryptor->drmSession)
         {
@@ -859,10 +862,10 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             {
                 aampcdmidecryptor->aamp->profiler.ProfileError(
                         PROFILE_BUCKET_LA_TOTAL);
-                if(AAMP_TUNE_FAILURE_UNKNOWN != failureReason)
+                if(AAMP_TUNE_FAILURE_UNKNOWN != e.data.dash_drmmetadata.failure)
                 {
-                    aampcdmidecryptor->aamp->SendErrorEvent(failureReason);
-                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failureReason);
+                    aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)e.data.dash_drmmetadata.failure);
                 }
             }
             GST_ERROR_OBJECT(aampcdmidecryptor,"Failed to create DRM Session\n");
