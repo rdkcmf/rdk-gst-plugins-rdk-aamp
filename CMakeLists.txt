@@ -52,7 +52,7 @@ endif(CMAKE_SYSTEM_NAME STREQUAL Darwin)
 
 find_package (Threads REQUIRED)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR} drm drm/ave drm/aes)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${GSTREAMER_INCLUDE_DIRS})
 include_directories(${CURL_INCLUDE_DIRS})
 include_directories(${GSTREAMERBASE_INCLUDE_DIRS})
@@ -84,6 +84,12 @@ if(CMAKE_DASH_DRM)
 	message("CMAKE_DASH_DRM set")
 	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/ave/StubsForAVEPlayer.cpp)
 	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp)
+endif()
+
+if(CMAKE_AVE_DRM)
+	message("CMAKE_AVE_DRM set")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAVE_DRM -DAAMP_STUBS_FOR_JS")
+	set(AAMP_CLI_SOURCES ${AAMP_CLI_SOURCES} drm/ave/StubsForAVEPlayer.cpp)
 endif()
 
 add_library(gstaamp SHARED ${GSTAAMP_SOURCES})
