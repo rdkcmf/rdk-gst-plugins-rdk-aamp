@@ -111,7 +111,7 @@ static void gst_aampcdmidecryptor_class_init(
             GST_ELEMENT_FACTORY_KLASS_DECRYPTOR,
             "Decrypts streams encrypted using Encryption.",
             "comcast");
-    //GST_DEBUG("Inside custom plugin init\n");
+    //GST_DEBUG_OBJECT(aampcdmidecryptor, "Inside custom plugin init\n");
 }
 
 static void gst_aampcdmidecryptor_init(
@@ -126,7 +126,7 @@ static void gst_aampcdmidecryptor_init(
     gst_base_transform_set_gap_aware(base, FALSE);
 
     g_mutex_init(&aampcdmidecryptor->mutex);
-    //GST_DEBUG("\n Initialized plugin mutex\n");
+    //GST_DEBUG_OBJECT(aampcdmidecryptor, "\n Initialized plugin mutex\n");
     g_cond_init(&aampcdmidecryptor->condition);
     aampcdmidecryptor->streamReceived = false;
     aampcdmidecryptor->canWait = false;
@@ -140,7 +140,7 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->decryptFailCount = 0;
     aampcdmidecryptor->notifyDecryptError = true;
 
-    //GST_DEBUG("******************Init called**********************\n");
+    //GST_DEBUG_OBJECT(aampcdmidecryptor, "******************Init called**********************\n");
 }
 
 void gst_aampcdmidecryptor_dispose(GObject * object)
@@ -252,7 +252,7 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
                 } else
                 {
                     gst_structure_remove_field(out, fieldName);
-                    GST_TRACE("Removing field %s", fieldName);
+                    GST_TRACE_OBJECT(aampcdmidecryptor, "Removing field %s", fieldName);
                 }
             }
 
@@ -423,7 +423,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 
     if (!aampcdmidecryptor->firstsegprocessed)
     {
-        GST_DEBUG("\n\nWaiting for key\n");
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "\n\nWaiting for key\n");
     }
     // The key might not have been received yet. Wait for it.
     if (!aampcdmidecryptor->streamReceived)
@@ -434,6 +434,14 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     {
         GST_DEBUG_OBJECT(aampcdmidecryptor,
                 "Condition signaled from state change transition. Aborting.");
+        result = GST_FLOW_NOT_SUPPORTED;
+        goto free_resources;
+    }
+
+    /* If drmSession creation failed, then the call will be aborted here */
+    if (aampcdmidecryptor->drmSession == NULL)
+    {
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "drmSession is invalid **** NULL ****. Aborting.");
         result = GST_FLOW_NOT_SUPPORTED;
         goto free_resources;
     }
@@ -761,7 +769,7 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         GstMapInfo mapInfo;
         if (!gst_buffer_map(initdatabuffer, &mapInfo, GST_MAP_READ))
             break;
-        GST_DEBUG("scheduling keyNeeded event");
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "scheduling keyNeeded event");
 
         //We need to get the sinkpad for sending upstream queries and
         //getting the current pad capability ie, VIDEO or AUDIO
@@ -844,7 +852,7 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
                     PROFILE_BUCKET_LA_TOTAL);
         }
         g_mutex_lock(&aampcdmidecryptor->mutex);
-        GST_DEBUG("\n acquired lock for mutex\n");
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "\n acquired lock for mutex\n");
         aampcdmidecryptor->sessionManager = new AampDRMSessionManager();
 	AAMPEvent e;
 	e.type = AAMP_EVENT_DRM_METADATA;
@@ -857,7 +865,12 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
 
         if (NULL == aampcdmidecryptor->drmSession)
         {
+/* For DELIA-32832 - Avoided setting 'streamReceived' as FALSE if createDrmSession() failed after a successful case.
+ * Set to FALSE is already handled on gst_aampcdmidecryptor_init() as part of initialization.
+ */
+#if 0
             aampcdmidecryptor->streamReceived = FALSE;
+#endif /* 0 */
             if(!aampcdmidecryptor->aamp->licenceFromManifest)
             {
                 aampcdmidecryptor->aamp->profiler.ProfileError(
@@ -897,7 +910,7 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         }
         g_cond_signal(&aampcdmidecryptor->condition);
         g_mutex_unlock(&aampcdmidecryptor->mutex);
-        GST_DEBUG("\n releasing ...................... mutex\n");
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "\n releasing ...................... mutex\n");
 
         gst_object_unref(sinkpad);
         gst_buffer_unmap(initdatabuffer, &mapInfo);
