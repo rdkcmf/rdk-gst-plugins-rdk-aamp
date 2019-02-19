@@ -88,7 +88,7 @@ public:
 	GstAampStreamer(GstAamp * aamp)
 	{
 		this->aamp = aamp;
-		rate = 1.0;
+		rate = AAMP_NORMAL_PLAY_RATE;
 		srcPadCapsSent = true;
 		format = FORMAT_INVALID;
 		audioFormat = FORMAT_NONE;
@@ -161,12 +161,12 @@ public:
 			gst_segment_init(&segment, GST_FORMAT_TIME);
 			segment.start = pts;
 			segment.position = 0;
-			segment.rate = 1.0;
+			segment.rate = AAMP_NORMAL_PLAY_RATE;
 			segment.applied_rate = rate;
 			GST_INFO_OBJECT(aamp, "Sending segment event. start %" G_GUINT64_FORMAT " stop %" G_GUINT64_FORMAT" rate %f\n", segment.start, segment.stop, segment.rate);
 			GstEvent* event = gst_event_new_segment (&segment);
 #else
-			GstEvent* event = gst_event_new_new_segment(FALSE, 1.0, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
+			GstEvent* event = gst_event_new_new_segment(FALSE, AAMP_NORMAL_PLAY_RATE, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
 #endif
 			if (!gst_pad_push_event(stream->srcpad, event))
 			{
@@ -685,7 +685,7 @@ static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 	if (NULL != aamp->stream[eMEDIATYPE_AUDIO].srcpad)
 	{
 		gboolean enable_audio;
-		if ( aamp->rate != 1.0F)
+		if ( aamp->rate != AAMP_NORMAL_PLAY_RATE)
 		{
 			enable_audio = FALSE;
 		}
@@ -878,7 +878,7 @@ static void gst_aamp_init(GstAamp * aamp)
 {
 	GST_AAMP_LOG_TIMING("Enter\n");
 	aamp->location = NULL;
-	aamp->rate = 1.0F;
+	aamp->rate = AAMP_NORMAL_PLAY_RATE;
 	aamp->audio_enabled = FALSE;
 	aamp->state = GST_AAMP_NONE;
 	aamp->context = new GstAampStreamer(aamp);
@@ -970,7 +970,7 @@ void GstAampStreamer::Event(const AAMPEvent & e )
 #ifdef AAMP_CC_ENABLED
 				if (aamp_IsCCEnabled())
 				{
-					if (e.data.speedChanged.rate != 1.0)
+					if (e.data.speedChanged.rate != AAMP_NORMAL_PLAY_RATE)
 					{
 						aamp_CCHide();
 					}

@@ -97,7 +97,7 @@ struct _GstAamp
 	media_stream stream[2];
 	gboolean audio_enabled;
 	gchar *location;
-	float rate;
+	gint rate;
 	GMutex mutex;
 	GstAampStreamer* context;
 	GCond state_changed;
