@@ -139,6 +139,7 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->selectedProtection = NULL;
     aampcdmidecryptor->decryptFailCount = 0;
     aampcdmidecryptor->notifyDecryptError = true;
+    aampcdmidecryptor->streamEncryped = false;
 
     //GST_DEBUG_OBJECT(aampcdmidecryptor, "******************Init called**********************\n");
 }
@@ -595,6 +596,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
             static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
             (uint8_t *)pbData, cbData, &pOpaqueData);
 
+    aampcdmidecryptor->streamEncryped = true;
     if (errorCode != 0)
     {
         GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
@@ -693,16 +695,31 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     if (!aampcdmidecryptor->firstsegprocessed
             && aampcdmidecryptor->aamp)
     {
-        if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
-        {
-            aampcdmidecryptor->aamp->profiler.ProfileError(
-                    PROFILE_BUCKET_DECRYPT_VIDEO);
-        } else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
-        {
-            aampcdmidecryptor->aamp->profiler.ProfileError(
-                    PROFILE_BUCKET_DECRYPT_AUDIO);
-        }
-        aampcdmidecryptor->firstsegprocessed = true;
+	if(!aampcdmidecryptor->streamEncryped)
+	{
+		if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
+		{
+			aampcdmidecryptor->aamp->profiler.ProfileEnd(
+					PROFILE_BUCKET_DECRYPT_VIDEO);
+		} else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+		{
+			aampcdmidecryptor->aamp->profiler.ProfileEnd(
+					PROFILE_BUCKET_DECRYPT_AUDIO);
+		}
+	}
+	else
+	{
+		if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
+		{
+			aampcdmidecryptor->aamp->profiler.ProfileError(
+					PROFILE_BUCKET_DECRYPT_VIDEO);
+		} else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
+		{
+			aampcdmidecryptor->aamp->profiler.ProfileError(
+					PROFILE_BUCKET_DECRYPT_AUDIO);
+		}
+	}
+	    aampcdmidecryptor->firstsegprocessed = true;
     }
 
     if (bufferMapped)
