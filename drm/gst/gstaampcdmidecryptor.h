@@ -61,6 +61,7 @@ struct _GstAampCDMIDecryptor
     const gchar*                    selectedProtection;
     gushort                         decryptFailCount;
     gboolean                        notifyDecryptError;
+    gboolean                        streamEncryped;
     //GstBuffer*                    initDataBuffer;
 };
 
