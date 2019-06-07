@@ -342,6 +342,8 @@ void gst_aampsrc_finalize(GObject * object)
 		g_free(aampsrc->location);
 		aampsrc->location = NULL;
 	}
+	g_mutex_clear (&aampsrc->mutex);
+	g_cond_clear (&aampsrc->block_push_cond);
 }
 
 
