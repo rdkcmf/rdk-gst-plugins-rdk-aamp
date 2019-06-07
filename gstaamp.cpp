@@ -38,6 +38,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
 
 #define MAX_BYTES_TO_SEND (188*1024)
+#define MAX_NUM_BUFFERS_IN_QUEUE 30
 
 #define  GST_AAMP_LOG_TIMING(msg...) GST_FIXME_OBJECT(aamp, msg)
 
@@ -74,6 +75,212 @@ enum GstAampProperties
 	PROP_0
 };
 
+gboolean gst_aamp_push(media_stream* stream, GstMiniObject *obj, gboolean *eosEvent = NULL)
+{
+	gboolean retVal = TRUE;
+	if (GST_IS_BUFFER(obj))
+	{
+		GstFlowReturn ret;
+		ret = gst_pad_push(stream->srcpad, GST_BUFFER(obj));
+		if (ret != GST_FLOW_OK)
+		{
+			GST_WARNING_OBJECT(stream->parent, "gst_pad_push[%s] error: %s \n", GST_PAD_NAME(stream->srcpad),
+			        gst_flow_get_name(ret));
+			gst_pad_pause_task(stream->srcpad);
+			retVal = FALSE;
+		}
+	}
+	else if (GST_IS_EVENT(obj))
+	{
+		GstEvent* event = GST_EVENT(obj);
+		if (eosEvent)
+		{
+			if (GST_EVENT_TYPE(event) == GST_EVENT_EOS)
+			{
+				*eosEvent = TRUE;
+			}
+		}
+		GST_INFO_OBJECT(stream->parent, "%s: send %s event\n", __FUNCTION__,
+		        GST_EVENT_TYPE_NAME(event));
+		if (!gst_pad_push_event(stream->srcpad, event))
+		{
+			GST_WARNING_OBJECT(stream->parent, "gst_pad_push_event[%s] error\n", GST_PAD_NAME(stream->srcpad));
+		}
+	}
+	else
+	{
+		GST_ERROR_OBJECT(stream->parent, "%s: unexpected object type in queue\n", __FUNCTION__);
+	}
+	return retVal;
+}
+
+/**
+ * @brief Enqueue buffer/event to queue
+ * @param[in] stream Media stream object pointer
+ * @param[in] item pointer to the object to be added to queue/pushed
+ */
+void gst_aamp_stream_add_item(media_stream* stream, gpointer item)
+{
+	GstAamp *aamp = GST_AAMP(stream->parent);
+	g_assert(NULL != stream->srcpad);
+	if (stream->parent->enable_src_tasks)
+	{
+		g_mutex_lock(&stream->mutex);
+		while (g_queue_get_length(stream->queue) > MAX_NUM_BUFFERS_IN_QUEUE)
+		{
+			g_cond_wait(&stream->cond, &stream->mutex);
+			if (aamp->flushing)
+			{
+				break;
+			}
+		}
+		if (aamp->flushing)
+		{
+			GstMiniObject *obj = (GstMiniObject *) item;
+			if (GST_IS_BUFFER(obj))
+			{
+				gst_buffer_unref(GST_BUFFER(obj));
+			}
+			else if (GST_IS_EVENT(obj))
+			{
+				gst_event_unref(GST_EVENT(obj));
+			}
+			else
+			{
+				GST_ERROR_OBJECT(aamp, "%s: unexpected object type in queue\n", __FUNCTION__);
+			}
+		}
+		else
+		{
+			g_queue_push_tail(stream->queue, item);
+		}
+		g_cond_broadcast(&stream->cond);
+		g_mutex_unlock(&stream->mutex);
+	}
+	else
+	{
+		gst_aamp_push(stream, (GstMiniObject *) item);
+	}
+}
+
+/**
+ * @brief Dequeue buffer/event and push it to srcpad
+ * @param[in] stream Media stream object pointer
+ */
+void gst_aamp_stream_push_next_item(media_stream* stream)
+{
+	GstAamp *aamp = GST_AAMP(stream->parent);
+	GST_DEBUG_OBJECT(aamp, "Enter\n");
+	gboolean eosSent = FALSE;
+	while (!eosSent)
+	{
+		g_mutex_lock(&stream->mutex);
+		if (g_queue_is_empty(stream->queue) && !aamp->flushing)
+		{
+			g_cond_wait(&stream->cond, &stream->mutex);
+		}
+		if (aamp->flushing)
+		{
+			GST_INFO_OBJECT(aamp, "Flushing");
+			g_mutex_unlock(&stream->mutex);
+			gst_pad_pause_task(stream->srcpad);
+			break;
+		}
+		gpointer item = g_queue_pop_head(stream->queue);
+		g_cond_broadcast(&stream->cond);
+		g_mutex_unlock(&stream->mutex);
+		if (item)
+		{
+			if (!gst_aamp_push(stream, (GstMiniObject *)item, &eosSent))
+			{
+				break;
+			}
+		}
+		else
+		{
+			GST_ERROR_OBJECT(aamp, "%s: object NULL\n", __FUNCTION__);
+			break;
+		}
+	}
+}
+
+/**
+ * @brief Start src pad task of stream
+ * @param[in] stream Media stream object pointer
+ */
+void gst_aamp_stream_start(media_stream* stream)
+{
+	if(stream->srcpad)
+	{
+		GST_INFO_OBJECT(stream->parent, "start %s pad task", GST_PAD_NAME(stream->srcpad));
+		gst_pad_start_task (stream->srcpad, (GstTaskFunction) gst_aamp_stream_push_next_item,
+				stream, NULL);
+	}
+}
+
+/**
+ * @brief Flushes stream queue
+ * @param[in] aamp Gstreamer aamp object pointer
+ */
+void gst_aamp_stream_flush(GstAamp *aamp)
+{
+	for (int i = 0; i < 2; i++)
+	{
+		media_stream* stream = &aamp->stream[i];
+		if (stream->srcpad)
+		{
+			if (aamp->enable_src_tasks)
+			{
+				g_mutex_lock(&stream->mutex);
+				while (FALSE == g_queue_is_empty(stream->queue))
+				{
+					GstMiniObject *obj = (GstMiniObject *) g_queue_pop_head(stream->queue);
+					if (GST_IS_BUFFER(obj))
+					{
+						gst_buffer_unref(GST_BUFFER(obj));
+					}
+					else if (GST_IS_EVENT(obj))
+					{
+						gst_event_unref(GST_EVENT(obj));
+					}
+					else
+					{
+						GST_ERROR_OBJECT(stream->parent, "%s: unexpected object type in queue\n", __FUNCTION__);
+					}
+				}
+				g_cond_broadcast(&stream->cond);
+				g_mutex_unlock(&stream->mutex);
+			}
+		}
+	}
+}
+
+/**
+ * @brief Flushes gstreamer elements and stop any running pad tasks
+ * @param[in] aamp Gstreamer aamp object pointer
+ */
+void gst_aamp_stop_and_flush(GstAamp *aamp)
+{
+	aamp->flushing = TRUE;
+	gst_aamp_stream_flush(aamp);
+	for (int i = 0; i < 2; i++)
+	{
+		media_stream* stream = &aamp->stream[i];
+		if (stream->srcpad)
+		{
+			GST_INFO_OBJECT(aamp, "[%s]sending flush start", GST_PAD_NAME(stream->srcpad));
+			gst_pad_push_event(stream->srcpad, gst_event_new_flush_start());
+			if (aamp->enable_src_tasks)
+			{
+				gst_pad_stop_task(stream->srcpad);
+			}
+			GST_INFO_OBJECT(aamp, "[%s]sending flush stop", GST_PAD_NAME(stream->srcpad));
+			gst_pad_push_event(stream->srcpad, gst_event_new_flush_stop(TRUE));
+		}
+	}
+	aamp->flushing = FALSE;
+}
+
 /**
  * @class GstAampStreamer
  * @brief Handle media data/configuration/events from AAMP core
@@ -93,7 +300,6 @@ public:
 		format = FORMAT_INVALID;
 		audioFormat = FORMAT_NONE;
 		readyToSend = false;
-		gst_segment_init(&segment, GST_FORMAT_TIME);
 	}
 
 
@@ -121,37 +327,25 @@ public:
 		if (stream->streamStart)
 		{
 			GST_INFO_OBJECT(aamp, "sending new_stream_start\n");
-			gboolean ret = gst_pad_push_event(stream->srcpad, gst_event_new_stream_start(aamp->stream_id));
-			if (!ret)
-			{
-				GST_ERROR_OBJECT(aamp, "%s: stream start error\n", __FUNCTION__);
+			gst_aamp_stream_add_item(stream, gst_event_new_stream_start(aamp->stream_id));
 
-			}
-			GST_INFO_OBJECT(aamp, "%s: sending caps\n", __FUNCTION__);
-			ret = gst_pad_push_event(stream->srcpad, gst_event_new_caps(stream->caps));
-			if (!ret)
-			{
-				GST_ERROR_OBJECT(aamp, "%s: caps evt error\n", __FUNCTION__);
-			}
+			GST_INFO_OBJECT(aamp, "%s: sending caps1\n", __FUNCTION__);
+			gst_aamp_stream_add_item(stream, gst_event_new_caps(stream->caps));
 			stream->streamStart = FALSE;
+			GST_INFO_OBJECT(aamp, "%s: sent caps\n", __FUNCTION__);
 		}
 		if (stream->flush)
 		{
-			gboolean ret = gst_pad_push_event(stream->srcpad, gst_event_new_flush_start());
-			if (!ret)
-			{
-				GST_ERROR_OBJECT(aamp, "%s: flush start error\n", __FUNCTION__);
-			}
+			GST_INFO_OBJECT(aamp, "%s: sending flush start\n", __FUNCTION__);
+			gst_aamp_stream_add_item(stream, gst_event_new_flush_start());
+
 #ifdef USE_GST1
 			GstEvent* event = gst_event_new_flush_stop(FALSE);
 #else
 			GstEvent* event = gst_event_new_flush_stop();
 #endif
-			ret = gst_pad_push_event(stream->srcpad, event);
-			if (!ret)
-			{
-				GST_ERROR_OBJECT(aamp, "%s: flush stop error\n", __FUNCTION__);
-			}
+			GST_INFO_OBJECT(aamp, "%s: sending flush stop\n", __FUNCTION__);
+			gst_aamp_stream_add_item(stream, event);
 			stream->flush = FALSE;
 		}
 		if (stream->resetPosition)
@@ -168,10 +362,8 @@ public:
 #else
 			GstEvent* event = gst_event_new_new_segment(FALSE, AAMP_NORMAL_PLAY_RATE, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
 #endif
-			if (!gst_pad_push_event(stream->srcpad, event))
-			{
-				GST_ERROR_OBJECT(aamp, "%s: gst_pad_push_event segment error\n", __FUNCTION__);
-			}
+			GST_INFO_OBJECT(aamp, "%s: sending segment\n", __FUNCTION__);
+			gst_aamp_stream_add_item(stream, event);
 			stream->resetPosition = FALSE;
 		}
 		stream->eventsPending = FALSE;
@@ -190,7 +382,6 @@ public:
 	 */
 	void Send(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
-		GstPad* srcpad = NULL;
 		gboolean discontinuity = FALSE;
 
 #ifdef AAMP_DISCARD_AUDIO_TRACK
@@ -202,7 +393,7 @@ public:
 #endif
 
 		const char* mediaTypeStr = (mediaType==eMEDIATYPE_AUDIO)?"eMEDIATYPE_AUDIO":"eMEDIATYPE_VIDEO";
-		GST_INFO_OBJECT(aamp, "Enter len = %d fpts %f mediaType %s", (int)len0, fpts, mediaTypeStr);
+		GST_DEBUG_OBJECT(aamp, "Enter len = %d fpts %f mediaType %s", (int)len0, fpts, mediaTypeStr);
 		if (!readyToSend)
 		{
 			if (!gst_aamp_ready(aamp))
@@ -213,12 +404,6 @@ public:
 			readyToSend = true;
 		}
 		media_stream* stream = &aamp->stream[mediaType];
-		srcpad = stream->srcpad;
-		if (!srcpad)
-		{
-			GST_WARNING_OBJECT(aamp, "Pad NULL mediaType: %s (%d)  len = %d fpts %f\n", mediaTypeStr, mediaType, (int)len0, fpts);
-			return;
-		}
 
 		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
 		GstClockTime dts = (GstClockTime)(fdts * GST_SECOND);
@@ -279,13 +464,8 @@ public:
 				GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_DISCONT);
 				discontinuity = FALSE;
 			}
-			GstFlowReturn ret;
-			ret = gst_pad_push(srcpad, buffer);
-			if (ret != GST_FLOW_OK)
-			{
-				GST_WARNING_OBJECT(aamp, "gst_pad_push error: %s mediaTypeStr %s\n", gst_flow_get_name(ret), mediaTypeStr);
-				break;
-			}
+
+			gst_aamp_stream_add_item( stream, buffer);
 			ptr = len + (unsigned char *) ptr;
 			len0 -= len;
 			if (len0 == 0)
@@ -308,7 +488,6 @@ public:
 	 */
 	void Send(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration)
 	{
-		GstPad* srcpad = NULL;
 		gboolean discontinuity = FALSE;
 
 #ifdef AAMP_DISCARD_AUDIO_TRACK
@@ -331,8 +510,7 @@ public:
 			readyToSend = true;
 		}
 		media_stream* stream = &aamp->stream[mediaType];
-		srcpad = stream->srcpad;
-		if (!srcpad)
+		if (!stream->srcpad)
 		{
 			GST_WARNING_OBJECT(aamp, "Pad NULL mediaType: %s (%d)  len = %d fpts %f\n", mediaTypeStr, mediaType,
 			        (int) pBuffer->len, fpts);
@@ -392,13 +570,7 @@ public:
 				GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_DISCONT);
 				discontinuity = FALSE;
 			}
-			GstFlowReturn ret;
-			ret = gst_pad_push(srcpad, buffer);
-			if (ret != GST_FLOW_OK)
-			{
-				GST_WARNING_OBJECT(aamp, "gst_pad_push error: %s mediaTypeStr %s\n", gst_flow_get_name(ret),
-				        mediaTypeStr);
-			}
+			gst_aamp_stream_add_item( stream, buffer);
 		}
 		/*Since ownership of buffer is given to gstreamer, reset pBuffer */
 		memset(pBuffer, 0x00, sizeof(GrowableBuffer));
@@ -424,34 +596,14 @@ public:
 	 */
 	void EndOfStreamReached(MediaType type)
 	{
-		GstEvent* event = gst_event_new_eos();
-		if (NULL != aamp->stream[type].srcpad)
+		GST_WARNING_OBJECT(aamp, "MediaType %d", (int)type);
+		media_stream* stream = &aamp->stream[type];
+		if (stream->srcpad)
 		{
-			if (!gst_pad_push_event(aamp->stream[type].srcpad, gst_event_ref(event)))
-			{
-				GST_ERROR_OBJECT(aamp, "Send EOS failed for type:%d\n", type);
-			}
+			gst_aamp_stream_add_item( stream, gst_event_new_eos());
 		}
 	}
 
-	/**
-	 * @brief Handles EOS notification from aamp core
-	 */
-	void EOS()
-	{
-		GstEvent* event = gst_event_new_eos();
-		if (NULL != aamp->stream[eMEDIATYPE_AUDIO].srcpad)
-		{
-			if (!gst_pad_push_event(aamp->stream[eMEDIATYPE_AUDIO].srcpad, gst_event_ref(event)))
-			{
-				GST_ERROR_OBJECT(aamp, "Send EOS failed\n");
-			}
-		}
-		if (!gst_pad_push_event(aamp->stream[eMEDIATYPE_VIDEO].srcpad, event))
-		{
-			GST_ERROR_OBJECT(aamp, "Send EOS failed\n");
-		}
-	}
 
 	/**
 	 * @brief Handles Discontinuity of stream
@@ -482,7 +634,6 @@ public:
 	void Event(const AAMPEvent& event);
 private:
 	GstAamp * aamp;
-	GstSegment segment;
 	gdouble rate;
 	bool srcPadCapsSent;
 	StreamOutputFormat format;
@@ -704,6 +855,10 @@ static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 			{
 				GST_WARNING_OBJECT(aamp, "gst_element_add_pad stream[eMEDIATYPE_AUDIO].srcpad failed");
 			}
+			if (aamp->enable_src_tasks)
+			{
+				gst_aamp_stream_start(&aamp->stream[eMEDIATYPE_AUDIO]);
+			}
 			aamp->stream[eMEDIATYPE_AUDIO].streamStart = TRUE;
 			aamp->stream[eMEDIATYPE_AUDIO].eventsPending = TRUE;
 			aamp->audio_enabled = TRUE;
@@ -774,6 +929,19 @@ static GstCaps* GetGstCaps(StreamOutputFormat format)
 }
 
 /**
+ * @brief Initialize a stream.
+ * @param[in] parent pointer to gstaamp instance
+ * @param[out] stream pointer to stream structure
+ */
+void gst_aamp_initialize_stream( GstAamp* parent, media_stream* stream)
+{
+	stream->queue = g_queue_new ();
+	stream->parent = parent;
+	g_mutex_init (&stream->mutex);
+	g_cond_init (&stream->cond);
+}
+
+/**
  * @brief Configures gstaamp with stream output formats
  * @param[in] aamp gstaamp pointer
  * @param[in] format Output format of main media
@@ -783,6 +951,7 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 {
 	GstCaps *caps;
 	gchar * padname = NULL;
+	GST_DEBUG_OBJECT(aamp, "format %d audioFormat %d", format, audioFormat);
 
 	g_mutex_lock (&aamp->mutex);
 	if ( aamp->state >= GST_AAMP_CONFIGURED )
@@ -793,11 +962,22 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 		return;
 	}
 	g_mutex_unlock (&aamp->mutex);
+	if (aamp->player_aamp->aamp->IsMuxedStream())
+	{
+		GST_INFO_OBJECT(aamp, "Muxed stream, enable src pad tasks");
+		aamp->enable_src_tasks = TRUE;
+	}
+	else
+	{
+		GST_INFO_OBJECT(aamp, "de-muxed stream, do not enable src pad tasks");
+		aamp->enable_src_tasks = FALSE;
+	}
 
 	caps = GetGstCaps(format);
 
 	if (caps)
 	{
+		media_stream* video = &aamp->stream[eMEDIATYPE_VIDEO];
 		padname = g_strdup_printf ("video_%02x", 1);
 		GstPad *srcpad = gst_pad_new_from_static_template(&gst_aamp_src_template_video, padname);
 		gst_object_ref(srcpad);
@@ -805,8 +985,9 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 		GST_OBJECT_FLAG_SET(srcpad, GST_PAD_FLAG_NEED_PARENT);
 		gst_pad_set_query_function(srcpad, GST_DEBUG_FUNCPTR(gst_aamp_src_query));
 		gst_pad_set_event_function(srcpad, GST_DEBUG_FUNCPTR(gst_aamp_src_event));
-		aamp->stream[eMEDIATYPE_VIDEO].caps= caps;
-		aamp->stream[eMEDIATYPE_VIDEO].srcpad = srcpad;
+		video->caps = caps;
+		video->srcpad = srcpad;
+		gst_aamp_initialize_stream(aamp, video);
 		if (padname)
 		{
 			GST_INFO_OBJECT(aamp, "Created pad %s", padname);
@@ -816,21 +997,28 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 	}
 	else
 	{
-		GST_INFO_OBJECT(aamp, "Unsupported videoFormat %d", format);
+		GST_WARNING_OBJECT(aamp, "Unsupported videoFormat %d", format);
 	}
 
 	caps = GetGstCaps(audioFormat);
 	if (caps)
 	{
+		media_stream* audio = &aamp->stream[eMEDIATYPE_AUDIO];
 		padname = g_strdup_printf ("audio_%02x", 1);
 		GstPad *srcpad = gst_pad_new_from_static_template(&gst_aamp_src_template_audio, padname);
+		g_free(padname);
 		gst_object_ref(srcpad);
 		gst_pad_use_fixed_caps(srcpad);
 		GST_OBJECT_FLAG_SET(srcpad, GST_PAD_FLAG_NEED_PARENT);
 		gst_pad_set_query_function(srcpad, GST_DEBUG_FUNCPTR(gst_aamp_src_query));
 		gst_pad_set_event_function(srcpad, GST_DEBUG_FUNCPTR(gst_aamp_src_event));
-		aamp->stream[eMEDIATYPE_AUDIO].srcpad = srcpad;
-		aamp->stream[eMEDIATYPE_AUDIO].caps= caps;
+		audio->srcpad = srcpad;
+		audio->caps= caps;
+		gst_aamp_initialize_stream(aamp, audio);
+	}
+	else
+	{
+		GST_WARNING_OBJECT(aamp, "Unsupported audioFormat %d", audioFormat);
 	}
 
 	g_mutex_lock (&aamp->mutex);
@@ -887,6 +1075,7 @@ static void gst_aamp_init(GstAamp * aamp)
 	memset(&aamp->stream[0], 0 , sizeof(aamp->stream));
 	aamp->stream_id = NULL;
 	aamp->idle_id = 0;
+	aamp->enable_src_tasks = FALSE;
 
 	gst_pad_set_chain_function(aamp->sinkpad, GST_DEBUG_FUNCPTR(gst_aamp_sink_chain));
 	gst_pad_set_event_function(aamp->sinkpad, GST_DEBUG_FUNCPTR(gst_aamp_sink_event));
@@ -897,6 +1086,32 @@ static void gst_aamp_init(GstAamp * aamp)
 	aamp->context->Discontinuity(eMEDIATYPE_AUDIO);
 }
 
+/**
+ * @brief Finalize a stream.
+ * @param[in] stream pointer to stream structure
+ */
+void gst_aamp_finalize_stream( media_stream* stream)
+{
+	if (stream->srcpad)
+	{
+		if (stream->caps)
+		{
+			gst_caps_unref(stream->caps);
+		}
+
+		if (stream->srcpad)
+		{
+			gst_object_unref(stream->srcpad);
+		}
+
+		if (stream->queue)
+		{
+			g_queue_free(stream->queue);
+		}
+		g_mutex_clear(&stream->mutex);
+		g_cond_clear(&stream->cond);
+	}
+}
 
 /**
  * @brief Invoked by gstreamer core to finalize element.
@@ -917,25 +1132,8 @@ void gst_aamp_finalize(GObject * object)
 	aamp->context=NULL;
 	g_cond_clear (&aamp->state_changed);
 
-	if (aamp->stream[eMEDIATYPE_AUDIO].caps)
-	{
-		gst_caps_unref(aamp->stream[eMEDIATYPE_AUDIO].caps);
-	}
-
-	if (aamp->stream[eMEDIATYPE_VIDEO].caps)
-	{
-		gst_caps_unref(aamp->stream[eMEDIATYPE_VIDEO].caps);
-	}
-
-	if (aamp->stream[eMEDIATYPE_VIDEO].srcpad)
-	{
-		gst_object_unref(aamp->stream[eMEDIATYPE_VIDEO].srcpad);
-	}
-
-	if (aamp->stream[eMEDIATYPE_AUDIO].srcpad)
-	{
-		gst_object_unref(aamp->stream[eMEDIATYPE_AUDIO].srcpad);
-	}
+	gst_aamp_finalize_stream( &aamp->stream[eMEDIATYPE_VIDEO]);
+	gst_aamp_finalize_stream(&aamp->stream[eMEDIATYPE_AUDIO]);
 
 	if (aamp->stream_id)
 	{
@@ -984,7 +1182,6 @@ void GstAampStreamer::Event(const AAMPEvent & e )
 
 			case AAMP_EVENT_EOS:
 				GST_INFO_OBJECT(aamp, "AAMP_EVENT_EOS");
-				aamp->context->EOS();
 				break;
 
 			case AAMP_EVENT_PLAYLIST_INDEXED:
@@ -1028,6 +1225,7 @@ static gboolean gst_aamp_query_uri(GstAamp *aamp)
 		aamp->location = g_strdup(uri);
 		g_free(uri);
 	}
+	gst_query_unref(query);
 	return ret;
 }
 
@@ -1168,6 +1366,10 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 				{
 					GST_WARNING_OBJECT(aamp, "gst_element_add_pad srcpad failed");
 				}
+				if (aamp->enable_src_tasks)
+				{
+					gst_aamp_stream_start(&aamp->stream[eMEDIATYPE_VIDEO]);
+				}
 				aamp->stream[eMEDIATYPE_VIDEO].streamStart = TRUE;
 				aamp->stream[eMEDIATYPE_VIDEO].eventsPending = TRUE;
 			}
@@ -1186,6 +1388,12 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 			{
 				aamp->idle_id = g_timeout_add(50, gst_aamp_report_on_tune_done, aamp);
 				aamp->report_tune = FALSE;
+			}
+			break;
+		case GST_STATE_CHANGE_PAUSED_TO_READY:
+			if (aamp->enable_src_tasks)
+			{
+				gst_aamp_stop_and_flush(aamp);
 			}
 			break;
 
@@ -1271,7 +1479,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 	GstAamp *aamp = GST_AAMP(element);
 	gboolean ret = FALSE;
 
-	GST_DEBUG_OBJECT(aamp, " query %s\n", gst_query_type_get_name(GST_QUERY_TYPE(query)));
+	GST_INFO_OBJECT(aamp, " query %s\n", gst_query_type_get_name(GST_QUERY_TYPE(query)));
 
 	switch (GST_QUERY_TYPE(query))
 	{
@@ -1343,6 +1551,7 @@ static GstFlowReturn gst_aamp_sink_chain(GstPad * pad, GstObject *parent, GstBuf
 
 	aamp = GST_AAMP(parent);
 	GST_DEBUG_OBJECT(aamp, "chain");
+	gst_buffer_unref(buffer);
 	return GST_FLOW_OK;
 }
 
@@ -1358,7 +1567,7 @@ static gboolean gst_aamp_sink_event(GstPad * pad, GstObject *parent, GstEvent * 
 	gboolean res = FALSE;
 	GstAamp *aamp = GST_AAMP(parent);
 
-	GST_DEBUG_OBJECT(aamp, " EVENT %s\n", gst_event_type_get_name(GST_EVENT_TYPE(event)));
+	GST_INFO_OBJECT(aamp, " EVENT %s\n", gst_event_type_get_name(GST_EVENT_TYPE(event)));
 
 	switch (GST_EVENT_TYPE(event))
 	{
@@ -1517,16 +1726,14 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %"G_GINT64_FORMAT"\n", rate, start );
 				if (flags & GST_SEEK_FLAG_FLUSH)
 				{
-					GST_DEBUG_OBJECT(aamp, "flush start");
-					gst_pad_push_event(aamp->stream[eMEDIATYPE_VIDEO].srcpad, gst_event_new_flush_start());
-					GST_DEBUG_OBJECT(aamp, "flush stop");
-					gst_pad_push_event(aamp->stream[eMEDIATYPE_VIDEO].srcpad, gst_event_new_flush_stop(TRUE));
-					if (aamp->audio_enabled)
+					gst_aamp_stop_and_flush(aamp);
+					if (aamp->enable_src_tasks)
 					{
-						GST_DEBUG_OBJECT(aamp, "flush start - aud");
-						gst_pad_push_event(aamp->stream[eMEDIATYPE_AUDIO].srcpad, gst_event_new_flush_start());
-						GST_DEBUG_OBJECT(aamp, "flush stop -aud");
-						gst_pad_push_event(aamp->stream[eMEDIATYPE_AUDIO].srcpad, gst_event_new_flush_stop(TRUE));
+						gst_aamp_stream_start(&aamp->stream[eMEDIATYPE_VIDEO]);
+						if (aamp->audio_enabled)
+						{
+							gst_aamp_stream_start(&aamp->stream[eMEDIATYPE_AUDIO]);
+						}
 					}
 				}
 				if (rate != aamp->rate)

@@ -84,6 +84,10 @@ struct media_stream
 	gboolean streamStart;
 	gboolean eventsPending;
 	GstCaps *caps;
+	GQueue *queue;
+	GMutex mutex;
+	GCond cond;
+	GstAamp* parent;
 };
 
 /**
@@ -105,6 +109,8 @@ struct _GstAamp
 	gchar* stream_id;
 	guint idle_id;
 	gboolean report_tune;
+	gboolean enable_src_tasks;
+	gboolean flushing;
 
 #ifdef AAMP_CC_ENABLED
 	GThread *cc_handler_id;
