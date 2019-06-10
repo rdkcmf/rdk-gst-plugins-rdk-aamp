@@ -158,12 +158,6 @@ void gst_aampcdmidecryptor_dispose(GObject * object)
         aampcdmidecryptor->protectionEvent = NULL;
     }
 
-    if (aampcdmidecryptor->sessionManager)
-    {
-        delete aampcdmidecryptor->sessionManager;
-         aampcdmidecryptor->sessionManager = NULL;
-    }
-
     g_mutex_clear(&aampcdmidecryptor->mutex);
     g_cond_clear(&aampcdmidecryptor->condition);
 
@@ -853,9 +847,9 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         }
         g_mutex_lock(&aampcdmidecryptor->mutex);
         GST_DEBUG_OBJECT(aampcdmidecryptor, "\n acquired lock for mutex\n");
-        aampcdmidecryptor->sessionManager = new AampDRMSessionManager();
-	AAMPEvent e;
-	e.type = AAMP_EVENT_DRM_METADATA;
+        aampcdmidecryptor->sessionManager = AampDRMSessionManager::getInstance();
+        AAMPEvent e;
+        e.type = AAMP_EVENT_DRM_METADATA;
         e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
         aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
