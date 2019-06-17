@@ -112,11 +112,8 @@ struct _GstAamp
 	gboolean enable_src_tasks;
 	gboolean flushing;
 
-#ifdef AAMP_CC_ENABLED
-	GThread *cc_handler_id;
-	gpointer video_decode_handle;
-	gboolean quit_cc_handler;
-#endif
+	guint decoder_idle_id;
+	gboolean report_decode_handle;
 
 	class PlayerInstanceAAMP* player_aamp;
 };
