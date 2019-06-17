@@ -631,6 +631,53 @@ public:
 			aamp->stream[i].eventsPending = TRUE;
 		}
 	}
+	unsigned long getCCDecoderHandle(void)
+	{
+		GstStructure *structure;
+		GstQuery *query;
+		const GValue *val;
+		gboolean ret;
+		gpointer decoder_handle = NULL;
+
+		if (!aamp->stream[eMEDIATYPE_VIDEO].srcpad)
+		{
+			GST_DEBUG_OBJECT(aamp, "No video src pad available for AAMP plugin to query decoder handle\n");
+		}
+		else
+		{
+			structure = gst_structure_new("get_video_handle", "video_handle", G_TYPE_POINTER, 0, NULL);
+#ifdef USE_GST1
+			query = gst_query_new_custom(GST_QUERY_CUSTOM, structure);
+#else
+			query = gst_query_new_application(GST_QUERY_CUSTOM, structure);
+#endif
+			ret = gst_pad_peer_query(aamp->stream[eMEDIATYPE_VIDEO].srcpad, query);
+			if (ret)
+			{
+				GST_DEBUG_OBJECT(aamp, "Video decoder handle queried successfully\n");
+				structure = (GstStructure *) gst_query_get_structure(query);
+				val = gst_structure_get_value(structure, "video_handle");
+
+				if (val == NULL)
+				{
+					GST_ERROR_OBJECT(aamp, "Unable to retrieve video decoder handle from structure\n");
+				}
+				else
+				{
+					decoder_handle = g_value_get_pointer(val);
+					GST_DEBUG_OBJECT(aamp, "video decoder handle: %x\n", decoder_handle);
+				}
+			}
+			else
+			{
+				GST_ERROR_OBJECT(aamp, "Video decoder handle query failed \n");
+			}
+
+			gst_query_unref(query);
+		}
+		return (unsigned long)decoder_handle;
+	}
+
 	void Event(const AAMPEvent& event);
 private:
 	GstAamp * aamp;
@@ -677,153 +724,19 @@ static GstStaticPadTemplate gst_aamp_src_template_audio =
 /* class initialization */
 G_DEFINE_TYPE_WITH_CODE (GstAamp, gst_aamp, GST_TYPE_ELEMENT, AAMP_TYPE_INIT_CODE);
 
-#ifdef AAMP_CC_ENABLED
-// initialize cc
 
 /**
- * @brief CC handler thread
- * @param[in] data Pointer to gstaamp
- * @retval
+ * @brief Idle task to report decoder handle
+ * @param[in] user_data  gstaamp pointer
+ * @retval G_SOURCE_REMOVE if handle received, G_SOURCE_CONTINUE otherwise
  */
-gpointer aamp_cc_handler_func(gpointer data)
+static gboolean gst_report_video_decode_handle(gpointer user_data)
 {
-	//Retrieve CC handle
-	GstAamp *aamp = (GstAamp *) data;
-	GstStructure *structure;
-	GstQuery *query;
-	const GValue *val;
-	gboolean ret;
-	int ccStatus;
-
-	GST_DEBUG_OBJECT(aamp, "Enter aamp_cc_handler_func \n");
-
-	if (!aamp->stream[eMEDIATYPE_VIDEO].srcpad)
-	{
-		GST_DEBUG_OBJECT(aamp, "No src pad available with AAMP plugin for CC start\n");
-		aamp->quit_cc_handler = TRUE;
-		return NULL;
-	}
-
-	structure = gst_structure_new("get_video_handle", "video_handle", G_TYPE_POINTER, 0, NULL);
-#ifdef USE_GST1
-	query = gst_query_new_custom(GST_QUERY_CUSTOM, structure);
-#else
-	query = gst_query_new_application(GST_QUERY_CUSTOM, structure);
-#endif
-	ret = gst_pad_peer_query(aamp->stream[eMEDIATYPE_VIDEO].srcpad, query);
-	if (ret)
-	{
-		GST_DEBUG_OBJECT(aamp, "Video decoder handle queried successfully\n");
-		structure = (GstStructure *) gst_query_get_structure(query);
-		val = gst_structure_get_value(structure, "video_handle");
-
-		if (val == NULL)
-		{
-			GST_ERROR_OBJECT(aamp, "Unable to retrieve video decoder handle from structure\n");
-			gst_query_unref(query);
-			aamp->quit_cc_handler = TRUE;
-			return NULL;
-		}
-
-		aamp->video_decode_handle = g_value_get_pointer(val);
-		GST_DEBUG_OBJECT(aamp, "video decoder handle: %x\n", aamp->video_decode_handle);
-	}
-	else
-	{
-		GST_ERROR_OBJECT(aamp, "Video decoder handle query failed \n");
-		gst_query_unref(query);
-		return NULL;
-	}
-
-	gst_query_unref(query);
-
-	ccStatus = aamp_CCStart(aamp->video_decode_handle);
-	if (ccStatus != 0)
-	{
-		GST_ERROR_OBJECT(aamp, "Unable to initialize CC module \n");
-		aamp->quit_cc_handler = TRUE;
-		return NULL;
-	}
-	else
-	{
-		ccStatus = aamp_CCShow();
-	}
-
-	while (aamp->quit_cc_handler == FALSE)
-	{
-		g_usleep(5000);
-	}
-
-	GST_DEBUG_OBJECT(aamp, "Shutting down CC module \n");
-	aamp_CCHide();
-	aamp_CCStop();
-
-	return NULL;
+	GstAamp *aamp = (GstAamp *) user_data;
+	aamp->player_aamp->aamp->NotifyFirstFrameReceived();
+	aamp->decoder_idle_id = 0;
+	return G_SOURCE_REMOVE;
 }
-
-// video decoder handle is available after brcmvideodecoder instantiated
-
-/**
- * @brief Starts CC
- * @param[in] aamp gstaamp pointer
- */
-static void gst_aamp_cc_start(GstAamp * aamp)
-{
-	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_cc_start \n");
-	//Check if CC disabled in configuration
-	if (!aamp_IsCCEnabled())
-	{
-		GST_DEBUG_OBJECT(aamp, "CC disabled via aamp.cfg or aamp options");
-		return;
-	}
-
-	//Check if CC was already invoked
-	if (aamp->cc_handler_id == NULL)
-	{
-		aamp->quit_cc_handler = FALSE;
-#ifdef USE_GST1
-		aamp->cc_handler_id = g_thread_new("aamp_cc_handler", aamp_cc_handler_func, aamp);
-#else
-		aamp->cc_handler_id = g_thread_create("aamp_cc_handler", aamp_cc_handler_func, TRUE, aamp);
-#endif
-		if (aamp->cc_handler_id == NULL)
-		{
-			aamp->quit_cc_handler = TRUE;
-			GST_ERROR_OBJECT(aamp, "Failed to start CC handler thread \n");
-		}
-	}
-
-	GST_DEBUG_OBJECT(aamp, "Exit gst_aamp_cc_start \n");
-}
-
-
-/**
- * @brief Stops CC
- * @param[in] aamp  gstaamp pointer
- */
-static void gst_aamp_cc_stop(GstAamp * aamp)
-{
-	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_cc_stop \n");
-
-	//Check if CC disabled in configuration.
-	if (!aamp_IsCCEnabled() && aamp->cc_handler_id == NULL)
-	{
-		GST_DEBUG_OBJECT(aamp, "CC disabled via aamp.cfg or aamp options");
-		return;
-	}
-
-	aamp->quit_cc_handler = TRUE;
-
-	if (aamp->cc_handler_id != NULL)
-	{
-		g_thread_join(aamp->cc_handler_id);
-		aamp->cc_handler_id = NULL;
-	}
-
-	GST_DEBUG_OBJECT(aamp, "Exit gst_aamp_cc_stop \n");
-}
-
-#endif // AAMP_CC_ENABLED
 
 
 /**
@@ -1076,6 +989,7 @@ static void gst_aamp_init(GstAamp * aamp)
 	aamp->stream_id = NULL;
 	aamp->idle_id = 0;
 	aamp->enable_src_tasks = FALSE;
+	aamp->decoder_idle_id = 0;
 
 	gst_pad_set_chain_function(aamp->sinkpad, GST_DEBUG_FUNCPTR(gst_aamp_sink_chain));
 	gst_pad_set_event_function(aamp->sinkpad, GST_DEBUG_FUNCPTR(gst_aamp_sink_event));
@@ -1162,22 +1076,6 @@ void GstAampStreamer::Event(const AAMPEvent & e )
 				aamp->state = GST_AAMP_STATE_ERROR;
 				g_cond_signal(&aamp->state_changed);
 				g_mutex_unlock (&aamp->mutex);
-				break;
-
-			case AAMP_EVENT_SPEED_CHANGED:
-#ifdef AAMP_CC_ENABLED
-				if (aamp_IsCCEnabled())
-				{
-					if (e.data.speedChanged.rate != AAMP_NORMAL_PLAY_RATE)
-					{
-						aamp_CCHide();
-					}
-					else
-					{
-						aamp_CCShow();
-					}
-				}
-#endif
 				break;
 
 			case AAMP_EVENT_EOS:
@@ -1349,6 +1247,7 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 #endif
 			gst_aamp_tune_async( aamp);
 			aamp->report_tune = TRUE;
+			aamp->report_decode_handle = TRUE;
 			aamp->player_aamp->aamp->ResumeTrackDownloads(eMEDIATYPE_VIDEO);
 			aamp->player_aamp->aamp->ResumeTrackDownloads(eMEDIATYPE_AUDIO);
 			break;
@@ -1381,13 +1280,17 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 			break;
 		case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
 			GST_AAMP_LOG_TIMING("GST_STATE_CHANGE_PAUSED_TO_PLAYING\n");
-#ifdef AAMP_CC_ENABLED
-			gst_aamp_cc_start(aamp);
-#endif
+//Invoke idle handler
 			if (aamp->report_tune)
 			{
 				aamp->idle_id = g_timeout_add(50, gst_aamp_report_on_tune_done, aamp);
 				aamp->report_tune = FALSE;
+			}
+
+			if (aamp->report_decode_handle)
+			{
+				aamp->decoder_idle_id = g_idle_add(gst_report_video_decode_handle, aamp);
+				aamp->report_decode_handle = FALSE;
 			}
 			break;
 		case GST_STATE_CHANGE_PAUSED_TO_READY:
@@ -1424,14 +1327,16 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 			break;
 		case GST_STATE_CHANGE_PAUSED_TO_READY:
 			GST_DEBUG_OBJECT(aamp, "GST_STATE_CHANGE_PAUSED_TO_READY");
+			if (aamp->decoder_idle_id)
+			{
+				g_source_remove(aamp->decoder_idle_id);
+				aamp->decoder_idle_id = 0;
+			}
 			g_mutex_lock(&aamp->mutex);
 			aamp->state = GST_AAMP_SHUTTING_DOWN;
 			g_cond_signal(&aamp->state_changed);
 			g_mutex_unlock(&aamp->mutex);
 			aamp->player_aamp->Stop();
-#ifdef AAMP_CC_ENABLED
-			gst_aamp_cc_stop(aamp);
-#endif
 			break;
 		case GST_STATE_CHANGE_READY_TO_NULL:
 			GST_DEBUG_OBJECT(aamp, "GST_STATE_CHANGE_READY_TO_NULL");

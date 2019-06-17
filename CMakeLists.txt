@@ -35,11 +35,6 @@ else()
 endif()
 pkg_check_modules(CURL REQUIRED libcurl)
 
-if(CMAKE_AAMP_CC_ENABLED)
-	message("CMAKE_AAMP_CC_ENABLED set")
-	pkg_check_modules(DIRECTFB REQUIRED directfb)
-endif()
-
 # Mac OS X
 if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set(OS_CXX_FLAGS "${OS_CXX_FLAGS} -g -x objective-c++")
@@ -151,17 +146,7 @@ endif()
 
 target_link_libraries (gstaamp aamp ${AAMP_COMMON_DEPENDENCIES} )
 
-if(CMAKE_AAMP_CC_ENABLED)
-	message("CMAKE_AAMP_CC_ENABLED set")
-	#Enable CC support in gstreamer aamp plugin
-	include_directories(${DIRECTFB_INCLUDE_DIRS})
-	include_directories(${DIRECTFB_INCLUDE_DIRS}/fusion)
-	include_directories(${DIRECTFB_INCLUDE_DIRS}/direct)
-	set(LIBAAMP_DEFINES "${AAMP_DEFINES} -DAAMP_CC_ENABLED")
-else()
-	message("CMAKE_AAMP_CC_ENABLED not set")
-	set(LIBAAMP_DEFINES "${AAMP_DEFINES}")
-endif()
+set(LIBAAMP_DEFINES "${AAMP_DEFINES}")
 
 if(CMAKE_SOC_PLATFORM_INTEL)
 	message("CMAKE_SOC_PLATFORM_INTEL set")
