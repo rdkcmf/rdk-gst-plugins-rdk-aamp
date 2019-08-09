@@ -32,6 +32,7 @@
 #ifdef DRM_BUILD_PROFILE
 #include "gstaampplayreadydecryptor.h"
 #include "gstaampwidevinedecryptor.h"
+#include "gstaampclearkeydecryptor.h"
 #endif
 
 
@@ -69,6 +70,16 @@ static gboolean plugin_init(GstPlugin * plugin)
 		else
 		{
 			logprintf("aamp plugin_init FAILED to register %s element\n", GstPluginNameWV);
+		}
+		ret = gst_element_register(plugin, GstPluginNameCK,
+				GST_RANK_PRIMARY, GST_TYPE_AAMPCLEARKEYDECRYPTOR );
+		if(ret)
+		{
+			logprintf("aamp plugin_init registered %s element\n", GstPluginNameCK);
+		}
+		else
+		{
+			logprintf("aamp plugin_init FAILED to register %s element\n", GstPluginNameCK);
 		}
 	}
 #endif
