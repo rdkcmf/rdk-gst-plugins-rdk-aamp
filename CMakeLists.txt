@@ -78,7 +78,7 @@ set(GSTAAMP_SOURCES gstaamp.cpp gstaampsrc.cpp gstaampinit.cpp)
 if(CMAKE_DASH_DRM)
 	message("CMAKE_DASH_DRM set")
 	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/ave/StubsForAVEPlayer.cpp)
-	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp)
+	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp drm/gst/gstaampclearkeydecryptor.cpp)
 endif()
 
 if(CMAKE_AVE_DRM)
