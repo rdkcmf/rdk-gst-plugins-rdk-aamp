@@ -142,6 +142,7 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->decryptFailCount = 0;
     aampcdmidecryptor->notifyDecryptError = true;
     aampcdmidecryptor->streamEncryped = false;
+    aampcdmidecryptor->ignoreSVP = false;
 
     //GST_DEBUG_OBJECT(aampcdmidecryptor, "******************Init called**********************\n");
 }
@@ -214,6 +215,11 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
 		else if(!g_strcmp0(capsinfo, WIDEVINE_PROTECTION_SYSTEM_ID))
 		{
 			aampcdmidecryptor->selectedProtection = WIDEVINE_PROTECTION_SYSTEM_ID;
+		}
+		else if(!g_strcmp0(capsinfo, CLEARKEY_PROTECTION_SYSTEM_ID))
+		{
+			aampcdmidecryptor->selectedProtection = CLEARKEY_PROTECTION_SYSTEM_ID;
+			aampcdmidecryptor->ignoreSVP = true;
 		}
 	}
 
@@ -785,7 +791,14 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	    if (subSampleCount > 0)
 	    {
 	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
-			pbData = g_malloc0(map.size + sizeof(Rpc_Secbuf_Info));
+			if(aampcdmidecryptor->ignoreSVP)
+			{
+				pbData = g_malloc0(map.size);
+			}
+			else
+			{
+				pbData = g_malloc0(map.size + sizeof(Rpc_Secbuf_Info));
+			}
 	#else
 	        pbData = g_malloc0(map.size);
 	#endif
@@ -815,26 +828,35 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            iCurrSource += nBytesEncrypted;
 	            cbData += nBytesEncrypted;
 	        }
+	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
+			if(!aampcdmidecryptor->ignoreSVP)
+			{
+				cbData += sizeof(Rpc_Secbuf_Info);
+			}
+	#endif
 	    } else
 	    {
+	        cbData = map.size;
 	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
-			pbData = g_malloc0(map.size + sizeof(Rpc_Secbuf_Info));
-			memcpy(pbData, map.data, map.size);
+			if(aampcdmidecryptor->ignoreSVP)
+			{
+				pbData = map.data;
+			}
+			else
+			{
+				pbData = g_malloc0(map.size + sizeof(Rpc_Secbuf_Info));
+				memcpy(pbData, map.data, map.size);
+				cbData += sizeof(Rpc_Secbuf_Info);
+			}
 	#else
 	        pbData = map.data;
 	#endif
-	        cbData = map.size;
 	    }
 
 	    if (cbData == 0)
 	    {
 	        goto free_resources;
 	    }
-
-	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
-		//Make sure there is at least enough buffer for Secbuf metadata
-		cbData += sizeof(Rpc_Secbuf_Info);
-	#endif
 
 	    errorCode = aampcdmidecryptor->drmSession->decrypt(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
@@ -898,6 +920,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	        // If there is opaque data then SVP is enabled and append
 	        // the sample buffer with the SVP data.  There is no encryped
 	        // data that can be copied back into host memory
+
 	        gst_add_svp_meta_data(buffer, pOpaqueData, cbData, subSampleCount, reader);
 	    }
 	    else if (subSampleCount > 0)
@@ -966,7 +989,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	                reinterpret_cast<GstMeta*>(protectionMeta));
 
 	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
-	    if (pbData)
+	    if ((pbData && !(aampcdmidecryptor->ignoreSVP)) || (subSampleCount > 0 ))
 	        g_free(pbData);
 	#else
 	    if (subSampleCount > 0)
@@ -1057,7 +1080,6 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
                 result = false;
                 break;
             }
-//          g_print("\n\n\n%s\n\n\n",capsinfo);
             gst_caps_unref(caps);
         }
 
@@ -1072,7 +1094,6 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             gboolean res = gst_pad_peer_query(sinkpad, query);
             if (res)
             {
-                //g_print("\n\n\nQuery sent successfully\n\n\n");
                 structure = (GstStructure *) gst_query_get_structure(query);
                 val = (gst_structure_get_value(structure, "aamp_instance"));
                 aampcdmidecryptor->aamp =
@@ -1088,10 +1109,6 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             result = FALSE;
             break;
         }
-
-        //g_print("Dumping initdata for testing \n\n\n%lu\n\n",mapInfo.size);
-        //gst_util_dump_mem(mapInfo.data,mapInfo.size);
-        //g_print("\n\n\nDumping initdata for testing \n\n\n");
 
         if(!aampcdmidecryptor->aamp->licenceFromManifest)
         {
