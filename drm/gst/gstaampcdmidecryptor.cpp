@@ -529,12 +529,10 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	{
 		if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
 		{
-			aampcdmidecryptor->aamp->profiler.ProfileError(
-					PROFILE_BUCKET_DECRYPT_VIDEO);
+			aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_DECRYPT_VIDEO, (int)result);
 		} else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
 		{
-			aampcdmidecryptor->aamp->profiler.ProfileError(
-					PROFILE_BUCKET_DECRYPT_AUDIO);
+			aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_DECRYPT_AUDIO, (int)result);
 		}
 	}
 	    aampcdmidecryptor->firstsegprocessed = true;
@@ -948,13 +946,11 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	    {
            if (aampcdmidecryptor->streamtype == eMEDIATYPE_VIDEO)
            {
-               aampcdmidecryptor->aamp->profiler.ProfileError(
-                       PROFILE_BUCKET_DECRYPT_VIDEO);
+               aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_DECRYPT_VIDEO, (int)result);
            }
            else if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
            {
-               aampcdmidecryptor->aamp->profiler.ProfileError(
-                       PROFILE_BUCKET_DECRYPT_AUDIO);
+               aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_DECRYPT_AUDIO, (int)result);
            }
 	       aampcdmidecryptor->firstsegprocessed = true;
         }
@@ -1130,13 +1126,16 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
 #endif /* 0 */
             if(!aampcdmidecryptor->aamp->licenceFromManifest)
             {
-                aampcdmidecryptor->aamp->profiler.ProfileError(
-                        PROFILE_BUCKET_LA_TOTAL);
                 if(AAMP_TUNE_FAILURE_UNKNOWN != e.data.dash_drmmetadata.failure)
                 {
+		    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
                     aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
                     aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)e.data.dash_drmmetadata.failure);
                 }
+		else
+		{
+		    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL);
+		}
             }
             GST_ERROR_OBJECT(aampcdmidecryptor,"Failed to create DRM Session\n");
             result = TRUE;
