@@ -1197,14 +1197,12 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         g_mutex_lock(&aampcdmidecryptor->mutex);
         GST_DEBUG_OBJECT(aampcdmidecryptor, "\n acquired lock for mutex\n");
         aampcdmidecryptor->sessionManager = aampcdmidecryptor->aamp->mDRMSessionManager;
-        AAMPEvent e;
-        e.type = AAMP_EVENT_DRM_METADATA;
-        e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
+        DrmMetaDataEventPtr e = std::make_shared<DrmMetaDataEvent>(AAMP_TUNE_FAILURE_UNKNOWN, "", 0, 0, false);
         aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
                         reinterpret_cast<const char *>(systemId), eMEDIAFORMAT_DASH,
                         reinterpret_cast<const unsigned char *>(mapInfo.data),
-                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e, nullptr, false);
+                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, e, nullptr, false);
 
         if (NULL == aampcdmidecryptor->drmSession)
         {
@@ -1216,17 +1214,17 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
 #endif /* 0 */
             if(!aampcdmidecryptor->aamp->licenceFromManifest)
             {
-                if(AAMP_TUNE_FAILURE_UNKNOWN != e.data.dash_drmmetadata.failure)
+                AAMPTuneFailure failure = e->getFailure();
+                if(AAMP_TUNE_FAILURE_UNKNOWN != failure)
                 {
-                    AAMPTuneFailure failure = e.data.dash_drmmetadata.failure;
-                    long responseCode = e.data.dash_drmmetadata.responseCode;
+                    long responseCode = e->getResponseCode();
                     bool selfAbort = (failure == AAMP_TUNE_LICENCE_REQUEST_FAILED && (responseCode == CURLE_ABORTED_BY_CALLBACK || responseCode == CURLE_WRITE_ERROR));
                     if (!selfAbort)
                     {
-                        aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                        aampcdmidecryptor->aamp->SendErrorEvent(failure);
                     }
-                    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
-                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)e.data.dash_drmmetadata.failure);
+                    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)failure);
+                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failure);
                 }
 		else
 		{
