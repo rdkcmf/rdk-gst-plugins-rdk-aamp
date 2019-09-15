@@ -285,7 +285,7 @@ void gst_aamp_stop_and_flush(GstAamp *aamp)
  * @class GstAampStreamer
  * @brief Handle media data/configuration/events from AAMP core
  */
-class GstAampStreamer : public StreamSink, public AAMPEventListener
+class GstAampStreamer : public StreamSink, public AAMPEventObjectListener
 {
 public:
 	/**
@@ -678,7 +678,7 @@ public:
 		return (unsigned long)decoder_handle;
 	}
 
-	void Event(const AAMPEvent& event);
+	void Event(const AAMPEventPtr& event);
 private:
 	GstAamp * aamp;
 	gdouble rate;
@@ -1062,9 +1062,9 @@ void gst_aamp_finalize(GObject * object)
  * @brief This function processes asynchronous events from aamp core
  * @param[in] e reference of event
  */
-void GstAampStreamer::Event(const AAMPEvent & e )
+void GstAampStreamer::Event(const AAMPEventPtr &e)
 {
-		switch (e.type)
+		switch (e->getType())
 		{
 			case AAMP_EVENT_TUNED:
 				GST_INFO_OBJECT(aamp, "AAMP_EVENT_TUNED");
@@ -1094,7 +1094,7 @@ void GstAampStreamer::Event(const AAMPEvent & e )
 				break;
 
 			default:
-				GST_DEBUG_OBJECT(aamp, "unknown event %d\n", e.type);
+				GST_DEBUG_OBJECT(aamp, "unknown event %d\n", e->getType());
 				break;
 		}
 }
