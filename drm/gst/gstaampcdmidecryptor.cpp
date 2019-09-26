@@ -140,6 +140,7 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->firstsegprocessed = false;
     aampcdmidecryptor->selectedProtection = NULL;
     aampcdmidecryptor->decryptFailCount = 0;
+    aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
     aampcdmidecryptor->notifyDecryptError = true;
     aampcdmidecryptor->streamEncryped = false;
     aampcdmidecryptor->ignoreSVP = false;
@@ -459,30 +460,47 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     errorCode = aampcdmidecryptor->drmSession->decrypt(keyIDBuffer, ivBuffer, buffer, subSampleCount, subsamplesBuffer);
 
     aampcdmidecryptor->streamEncryped = true;
-    if (errorCode != 0)
+    if (errorCode != 0 || aampcdmidecryptor->hdcpOpProtectionFailCount)
     {
-        GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
-        aampcdmidecryptor->decryptFailCount++;
-        if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError)
-        {
-          aampcdmidecryptor->notifyDecryptError = false;
-          GError *error;
-          if(errorCode == HDCP_AUTHENTICATION_FAILURE)
-          {
-              error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Authentication Failure");
-          }
-          else
-          {
-              error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
-          }
-          gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
-          result = GST_FLOW_ERROR;
-        }
-        goto free_resources;
+	if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
+	{
+		aampcdmidecryptor->hdcpOpProtectionFailCount++;
+	}
+	else if(aampcdmidecryptor->hdcpOpProtectionFailCount)
+	{
+		if(aampcdmidecryptor->hdcpOpProtectionFailCount >= DECRYPT_FAILURE_THRESHOLD) {
+			GstStructure *newmsg = gst_structure_new("HDCPProtectionFailure", "message", G_TYPE_STRING,"HDCP Output Protection Error", NULL);
+			gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor),gst_message_new_application (GST_OBJECT (aampcdmidecryptor), newmsg));
+		}
+		aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
+	}
+	else
+	{
+		GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
+		aampcdmidecryptor->decryptFailCount++;
+		if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError )
+		{
+			aampcdmidecryptor->notifyDecryptError = false;
+			GError *error;
+			if(errorCode == HDCP_COMPLIANCE_CHECK_FAILURE)
+			{
+				// Failure - 2.2 vs 1.4 HDCP
+				error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Compliance Check Failure");
+			}
+			else
+			{
+				error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+			}
+			gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
+			result = GST_FLOW_ERROR;
+		}
+		goto free_resources;
+	}
     }
     else
     {
         aampcdmidecryptor->decryptFailCount = 0;
+	aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
         if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
         {
             GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for Audio packets");
@@ -863,30 +881,48 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
 	            (uint8_t *)pbData, cbData, &pOpaqueData);
 
-	    if (errorCode != 0)
+	    if (errorCode != 0 && aampcdmidecryptor->hdcpOpProtectionFailCount)
 	    {
-	        GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
-	        aampcdmidecryptor->decryptFailCount++;
-	        if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError)
-	        {
-	          aampcdmidecryptor->notifyDecryptError = false;
-	          GError *error;
-	          if(errorCode == HDCP_AUTHENTICATION_FAILURE)
-	          {
-                  error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Authentication Failure");
-	          }
-	          else
-	          {
-                  error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
-	          }
-	          gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
-	          result = GST_FLOW_ERROR;
-	        }
-	        goto free_resources;
+
+			if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
+			{
+				aampcdmidecryptor->hdcpOpProtectionFailCount++;
+			}
+			else if(aampcdmidecryptor->hdcpOpProtectionFailCount)
+			{
+				if(aampcdmidecryptor->hdcpOpProtectionFailCount >= DECRYPT_FAILURE_THRESHOLD) {
+					GstStructure *newmsg = gst_structure_new("HDCPProtectionFailure", "message", G_TYPE_STRING,"HDCP Output Protection Error", NULL);
+					gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor),gst_message_new_application (GST_OBJECT (aampcdmidecryptor), newmsg));
+				}
+				aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
+			}
+			else
+			{
+				GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
+				aampcdmidecryptor->decryptFailCount++;
+				if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError )
+				{
+					aampcdmidecryptor->notifyDecryptError = false;
+					GError *error;
+					if(errorCode == HDCP_COMPLIANCE_CHECK_FAILURE)
+					{
+						// Failure - 2.2 vs 1.4 HDCP
+						error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Compliance Check Failure");
+					}
+					else
+					{
+						error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+					}
+					gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
+					result = GST_FLOW_ERROR;
+				}
+				goto free_resources;
+			}
 	    }
 	    else
 	    {
 	        aampcdmidecryptor->decryptFailCount = 0;
+		aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
 	        if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
 	        {
 	            GST_DEBUG_OBJECT(aampcdmidecryptor, "Decryption successful for Audio packets");
