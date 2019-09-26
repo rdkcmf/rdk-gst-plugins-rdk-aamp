@@ -453,7 +453,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     errorCode = aampcdmidecryptor->drmSession->decrypt(keyIDBuffer, ivBuffer, buffer, subSampleCount, subsamplesBuffer);
 
     aampcdmidecryptor->streamEncryped = true;
-    if (errorCode != 0)
+    if (errorCode != 0 && errorCode != HDCP_OUTPUT_PROTECTION_FAILURE)
     {
         GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
         aampcdmidecryptor->decryptFailCount++;
@@ -461,10 +461,11 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
         {
           aampcdmidecryptor->notifyDecryptError = false;
           GError *error;
-          if(errorCode == HDCP_AUTHENTICATION_FAILURE)
-          {
-              error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Authentication Failure");
-          }
+	  if(errorCode == HDCP_COMPLIANCE_CHECK_FAILURE)
+	  {
+		// Failure - 2.2 vs 1.4 HDCP
+		error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Compliance Check Failure");
+	  }
           else
           {
               error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
@@ -840,21 +841,22 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
 	            (uint8_t *)pbData, cbData, &pOpaqueData);
 
-	    if (errorCode != 0)
+	    if (errorCode != 0 && errorCode != HDCP_OUTPUT_PROTECTION_FAILURE)
 	    {
 	        GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
 	        aampcdmidecryptor->decryptFailCount++;
-	        if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError)
+	        if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError )
 	        {
 	          aampcdmidecryptor->notifyDecryptError = false;
 	          GError *error;
-	          if(errorCode == HDCP_AUTHENTICATION_FAILURE)
-	          {
-                  error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Authentication Failure");
-	          }
+		  if(errorCode == HDCP_COMPLIANCE_CHECK_FAILURE)
+		  {
+			// Failure - 2.2 vs 1.4 HDCP
+			error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "HDCP Compliance Check Failure");
+		  }
 	          else
 	          {
-                  error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
+                  	error = g_error_new(GST_STREAM_ERROR , GST_STREAM_ERROR_FAILED, "Decrypt Error: code %d", errorCode);
 	          }
 	          gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor), gst_message_new_error (GST_OBJECT (aampcdmidecryptor), error, "Decrypt Failed"));
 	          result = GST_FLOW_ERROR;
