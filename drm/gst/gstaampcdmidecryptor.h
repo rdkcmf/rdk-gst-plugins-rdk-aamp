@@ -60,6 +60,7 @@ struct _GstAampCDMIDecryptor
     GstEvent*                       protectionEvent;
     const gchar*                    selectedProtection;
     gushort                         decryptFailCount;
+    gushort			    hdcpOpProtectionFailCount;
     gboolean                        notifyDecryptError;
     gboolean                        streamEncryped;
     gboolean                        ignoreSVP; //No need for svp for clearKey streams
