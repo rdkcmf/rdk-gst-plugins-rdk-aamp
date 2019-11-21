@@ -828,12 +828,6 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            iCurrSource += nBytesEncrypted;
 	            cbData += nBytesEncrypted;
 	        }
-	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
-			if(!aampcdmidecryptor->ignoreSVP)
-			{
-				cbData += sizeof(Rpc_Secbuf_Info);
-			}
-	#endif
 	    } else
 	    {
 	        cbData = map.size;
@@ -846,7 +840,6 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 			{
 				pbData = g_malloc0(map.size + sizeof(Rpc_Secbuf_Info));
 				memcpy(pbData, map.data, map.size);
-				cbData += sizeof(Rpc_Secbuf_Info);
 			}
 	#else
 	        pbData = map.data;
@@ -855,8 +848,16 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 
 	    if (cbData == 0)
 	    {
+		// Free resources for unencrypted bytes.
 	        goto free_resources;
 	    }
+
+	#if defined(USE_SAGE_SVP) && defined(USE_OPENCDM)
+			if(!aampcdmidecryptor->ignoreSVP)
+			{
+				cbData += sizeof(Rpc_Secbuf_Info);
+			}
+	#endif
 
 	    errorCode = aampcdmidecryptor->drmSession->decrypt(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
