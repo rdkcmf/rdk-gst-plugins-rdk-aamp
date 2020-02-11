@@ -622,7 +622,7 @@ public:
 	 * @param[in] position seek position
 	 * @param[in] rate playback rate
 	 */
-	void Flush(double position, float rate)
+	void Flush(double position, float rate, bool shouldTearDown)
 	{
 		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
 		{
