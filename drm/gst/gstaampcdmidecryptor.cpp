@@ -1154,7 +1154,7 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         }
         g_mutex_lock(&aampcdmidecryptor->mutex);
         GST_DEBUG_OBJECT(aampcdmidecryptor, "\n acquired lock for mutex\n");
-        aampcdmidecryptor->sessionManager = AampDRMSessionManager::getInstance();
+        aampcdmidecryptor->sessionManager = aampcdmidecryptor->aamp->mDRMSessionManager;
         AAMPEvent e;
         e.type = AAMP_EVENT_DRM_METADATA;
         e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
