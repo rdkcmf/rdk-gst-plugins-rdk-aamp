@@ -1176,8 +1176,14 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             {
                 if(AAMP_TUNE_FAILURE_UNKNOWN != e.data.dash_drmmetadata.failure)
                 {
-		    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
-                    aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                    AAMPTuneFailure failure = e.data.dash_drmmetadata.failure;
+                    long responseCode = e.data.dash_drmmetadata.responseCode;
+                    bool selfAbort = (failure == AAMP_TUNE_LICENCE_REQUEST_FAILED && (responseCode == CURLE_ABORTED_BY_CALLBACK || responseCode == CURLE_WRITE_ERROR));
+                    if (!selfAbort)
+                    {
+                        aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                    }
+                    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
                     aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)e.data.dash_drmmetadata.failure);
                 }
 		else
