@@ -79,7 +79,7 @@ void JSObjectMakeDate(){ }
 void JSObjectMakeError(){ }
 }
 #endif
-
+#ifndef REALTEKCE
 #ifdef AVE_DRM
 
 #include "psdk/PSDKEvents.h"
@@ -131,4 +131,5 @@ void SetSurfacePos(void* surface, int x, int y)
 {
 }
 
+#endif
 #endif
