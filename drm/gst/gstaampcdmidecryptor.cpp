@@ -1160,9 +1160,9 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
         aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
-                        reinterpret_cast<const char *>(systemId),
+                        reinterpret_cast<const char *>(systemId), eMEDIAFORMAT_DASH,
                         reinterpret_cast<const unsigned char *>(mapInfo.data),
-                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e);
+                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e, nullptr, false);
 
         if (NULL == aampcdmidecryptor->drmSession)
         {
