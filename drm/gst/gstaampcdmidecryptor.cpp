@@ -462,13 +462,16 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     aampcdmidecryptor->streamEncryped = true;
     if (errorCode != 0 || aampcdmidecryptor->hdcpOpProtectionFailCount)
     {
+	printf("%s %d errorcode: %d \n", __FUNCTION__, __LINE__,errorCode);
 	if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
 	{
 		aampcdmidecryptor->hdcpOpProtectionFailCount++;
+		printf("%s %d aampcdmidecryptor->hdcpOpProtectionFailCount++: %d \n", __FUNCTION__, __LINE__,aampcdmidecryptor->hdcpOpProtectionFailCount);
 	}
 	else if(aampcdmidecryptor->hdcpOpProtectionFailCount)
 	{
 		if(aampcdmidecryptor->hdcpOpProtectionFailCount >= DECRYPT_FAILURE_THRESHOLD) {
+			printf("%s %d HDCP Output Protection Error\n", __FUNCTION__, __LINE__);
 			GstStructure *newmsg = gst_structure_new("HDCPProtectionFailure", "message", G_TYPE_STRING,"HDCP Output Protection Error", NULL);
 			gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor),gst_message_new_application (GST_OBJECT (aampcdmidecryptor), newmsg));
 		}
@@ -499,6 +502,10 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     }
     else
     {
+	if ( aampcdmidecryptor->hdcpOpProtectionFailCount  != 0 ) 
+	{
+		printf("%s %d hdcpOpProtectionFailCount resetting to zero\n", __FUNCTION__, __LINE__);
+	}
         aampcdmidecryptor->decryptFailCount = 0;
 	aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
         if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
@@ -880,17 +887,20 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	    errorCode = aampcdmidecryptor->drmSession->decrypt(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
 	            (uint8_t *)pbData, cbData, &pOpaqueData);
-
 	    if (errorCode != 0 && aampcdmidecryptor->hdcpOpProtectionFailCount)
 	    {
+			printf("%s %d  dycrypt error %d  \n", __FUNCTION__, __LINE__,errorCode);
 
 			if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
 			{
+				printf("%s %d HDCP_OUTPUT_PROTECTION_FAILURE \n", __FUNCTION__, __LINE__);
 				aampcdmidecryptor->hdcpOpProtectionFailCount++;
 			}
 			else if(aampcdmidecryptor->hdcpOpProtectionFailCount)
 			{
+				printf("%s %d executing else condition: count : %d  \n", __FUNCTION__, __LINE__, aampcdmidecryptor->hdcpOpProtectionFailCount);	
 				if(aampcdmidecryptor->hdcpOpProtectionFailCount >= DECRYPT_FAILURE_THRESHOLD) {
+					printf("%s %d  sending retune message to aamp \n", __FUNCTION__, __LINE__);
 					GstStructure *newmsg = gst_structure_new("HDCPProtectionFailure", "message", G_TYPE_STRING,"HDCP Output Protection Error", NULL);
 					gst_element_post_message(reinterpret_cast<GstElement*>(aampcdmidecryptor),gst_message_new_application (GST_OBJECT (aampcdmidecryptor), newmsg));
 				}
@@ -898,6 +908,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 			}
 			else
 			{
+				printf("%s %d  dycrypt failed , error: %d  \n", __FUNCTION__, __LINE__,errorCode);
 				GST_ERROR_OBJECT(aampcdmidecryptor, "decryption failed; error code %d\n",errorCode);
 				aampcdmidecryptor->decryptFailCount++;
 				if(aampcdmidecryptor->decryptFailCount >= DECRYPT_FAILURE_THRESHOLD && aampcdmidecryptor->notifyDecryptError )
@@ -921,7 +932,11 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	    }
 	    else
 	    {
-	        aampcdmidecryptor->decryptFailCount = 0;
+		if ( aampcdmidecryptor->hdcpOpProtectionFailCount  != 0 )
+		{
+			printf("%s %d hdcpOpProtectionFailCount resetting to zero\n", __FUNCTION__, __LINE__);
+		}
+		aampcdmidecryptor->decryptFailCount = 0;
 		aampcdmidecryptor->hdcpOpProtectionFailCount = 0;
 	        if (aampcdmidecryptor->streamtype == eMEDIATYPE_AUDIO)
 	        {
