@@ -881,7 +881,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
 	            (uint8_t *)pbData, cbData, &pOpaqueData);
 
-	    if (errorCode != 0 && aampcdmidecryptor->hdcpOpProtectionFailCount)
+	    if (errorCode != 0 || aampcdmidecryptor->hdcpOpProtectionFailCount)
 	    {
 
 			if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
