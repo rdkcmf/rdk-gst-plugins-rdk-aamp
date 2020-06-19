@@ -881,7 +881,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	            static_cast<uint8_t *>(ivMap.data), static_cast<uint32_t>(ivMap.size),
 	            (uint8_t *)pbData, cbData, &pOpaqueData);
 
-	    if (errorCode != 0 && aampcdmidecryptor->hdcpOpProtectionFailCount)
+	    if (errorCode != 0 || aampcdmidecryptor->hdcpOpProtectionFailCount)
 	    {
 
 			if(errorCode == HDCP_OUTPUT_PROTECTION_FAILURE)
@@ -1176,8 +1176,14 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             {
                 if(AAMP_TUNE_FAILURE_UNKNOWN != e.data.dash_drmmetadata.failure)
                 {
-		    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
-                    aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                    AAMPTuneFailure failure = e.data.dash_drmmetadata.failure;
+                    long responseCode = e.data.dash_drmmetadata.responseCode;
+                    bool selfAbort = (failure == AAMP_TUNE_LICENCE_REQUEST_FAILED && (responseCode == CURLE_ABORTED_BY_CALLBACK || responseCode == CURLE_WRITE_ERROR));
+                    if (!selfAbort)
+                    {
+                        aampcdmidecryptor->aamp->SendErrorEvent(e.data.dash_drmmetadata.failure);
+                    }
+                    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)e.data.dash_drmmetadata.failure);
                     aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)e.data.dash_drmmetadata.failure);
                 }
 		else
