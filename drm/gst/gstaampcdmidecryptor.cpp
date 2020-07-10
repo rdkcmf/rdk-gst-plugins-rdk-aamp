@@ -61,6 +61,8 @@ enum
 #define DEBUG_FUNC()
 #endif
 
+static const gchar *srcMimeTypes[] = { "video/x-h264", "audio/mpeg", "video/x-h265", "audio/x-eac3", "audio/x-gst-fourcc-ec_3", nullptr };
+
 /* prototypes */
 static void gst_aampcdmidecryptor_dispose(GObject*);
 static GstCaps *gst_aampcdmidecryptor_transform_caps(
@@ -74,6 +76,8 @@ static GstStateChangeReturn gst_aampcdmidecryptor_changestate(
         GstElement* element, GstStateChange transition);
 static void gst_aampcdmidecryptor_set_property(GObject * object,
         guint prop_id, const GValue * value, GParamSpec * pspec);
+static gboolean gst_aampcdmidecryptor_accept_caps(GstBaseTransform * trans,
+        GstPadDirection direction, GstCaps * caps);
 
 
 /* class initialization */
@@ -106,6 +110,8 @@ static void gst_aampcdmidecryptor_class_init(
             gst_aampcdmidecryptor_sink_event);
     base_transform_class->transform_ip = GST_DEBUG_FUNCPTR(
             gst_aampcdmidecryptor_transform_ip);
+    base_transform_class->accept_caps = GST_DEBUG_FUNCPTR(
+            gst_aampcdmidecryptor_accept_caps);
     base_transform_class->transform_ip_on_passthrough = FALSE;
 
     gst_element_class_set_static_metadata(GST_ELEMENT_CLASS(klass),
@@ -207,22 +213,29 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
 
     if(!aampcdmidecryptor->selectedProtection)
     {
-		GstStructure *capstruct = gst_caps_get_structure(caps, 0);
-		const gchar* capsinfo = gst_structure_get_string(capstruct, "protection-system");
-		if(!g_strcmp0(capsinfo, PLAYREADY_PROTECTION_SYSTEM_ID))
-		{
-			aampcdmidecryptor->selectedProtection = PLAYREADY_PROTECTION_SYSTEM_ID;
-		}
-		else if(!g_strcmp0(capsinfo, WIDEVINE_PROTECTION_SYSTEM_ID))
-		{
-			aampcdmidecryptor->selectedProtection = WIDEVINE_PROTECTION_SYSTEM_ID;
-		}
-		else if(!g_strcmp0(capsinfo, CLEARKEY_PROTECTION_SYSTEM_ID))
-		{
-			aampcdmidecryptor->selectedProtection = CLEARKEY_PROTECTION_SYSTEM_ID;
-			aampcdmidecryptor->ignoreSVP = true;
-		}
-	}
+        GstStructure *capstruct = gst_caps_get_structure(caps, 0);
+        const gchar* capsinfo = gst_structure_get_string(capstruct, "protection-system");
+        if(capsinfo != NULL)
+        {
+            if(!g_strcmp0(capsinfo, PLAYREADY_PROTECTION_SYSTEM_ID))
+            {
+                aampcdmidecryptor->selectedProtection = PLAYREADY_PROTECTION_SYSTEM_ID;
+            }
+            else if(!g_strcmp0(capsinfo, WIDEVINE_PROTECTION_SYSTEM_ID))
+            {
+                aampcdmidecryptor->selectedProtection = WIDEVINE_PROTECTION_SYSTEM_ID;
+            }
+            else if(!g_strcmp0(capsinfo, CLEARKEY_PROTECTION_SYSTEM_ID))
+            {
+                 aampcdmidecryptor->selectedProtection = CLEARKEY_PROTECTION_SYSTEM_ID;
+                 aampcdmidecryptor->ignoreSVP = true;
+            }
+        }
+        else
+        {
+            GST_DEBUG_OBJECT(trans, "can't find protection-system field from caps: %" GST_PTR_FORMAT, caps);
+        }
+    }
 
     for (unsigned i = 0; i < size; ++i)
     {
@@ -253,7 +266,8 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
                         && g_strcmp0(fieldName, "width"))
                 {
                     continue;
-                } else
+                }
+                else
                 {
                     gst_structure_remove_field(out, fieldName);
                     GST_TRACE_OBJECT(aampcdmidecryptor, "Removing field %s", fieldName);
@@ -261,30 +275,58 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
             }
 
             gst_structure_set(out, "protection-system", G_TYPE_STRING,
-					aampcdmidecryptor->selectedProtection, "original-media-type",
+                    aampcdmidecryptor->selectedProtection, "original-media-type",
                     G_TYPE_STRING, gst_structure_get_name(in), NULL);
 
             gst_structure_set_name(out, "application/x-cenc");
 
-        } else
+        }
+        else
         {
             if (!gst_structure_has_field(in, "original-media-type"))
-                continue;
-
-            out = gst_structure_copy(in);
-            gst_structure_set_name(out,
-                    gst_structure_get_string(out, "original-media-type"));
-
-            /* filter out the DRM related fields from the down-stream caps */
-            for (int j = 0; j < gst_structure_n_fields(in); ++j)
             {
-                const gchar* fieldName = gst_structure_nth_field_name(in, j);
+                GST_DEBUG_OBJECT(trans, "No original-media-type field in caps: %" GST_PTR_FORMAT, out);
 
-                if (g_str_has_prefix(fieldName, "protection-system")
-                        || g_str_has_prefix(fieldName, "original-media-type"))
-                    gst_structure_remove_field(out, fieldName);
+                // BCOM-4645: Check if these caps are present in supported src pad caps in case direction is GST_PAD_SINK,
+                // we can allow caps in this case, since plugin will let the data passthrough
+                gboolean found = false;
+                for (int j = 0; srcMimeTypes[j]; j++)
+                {
+                    if (gst_structure_has_name(in, srcMimeTypes[j]))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    //From supported src type format
+                    out = gst_structure_copy(in);
+                }
+                else
+                {
+                    continue;
+                }
             }
+            else
+            {
 
+                out = gst_structure_copy(in);
+                gst_structure_set_name(out,
+                gst_structure_get_string(out, "original-media-type"));
+
+                /* filter out the DRM related fields from the down-stream caps */
+                for (int j = 0; j < gst_structure_n_fields(in); ++j)
+                {
+                    const gchar* fieldName = gst_structure_nth_field_name(in, j);
+
+                    if (g_str_has_prefix(fieldName, "protection-system")
+                        || g_str_has_prefix(fieldName, "original-media-type"))
+                    {
+                        gst_structure_remove_field(out, fieldName);
+                    }
+                }
+            }
         }
 
         gst_aampcdmicapsappendifnotduplicate(transformedCaps, out);
@@ -1160,9 +1202,9 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         e.data.dash_drmmetadata.failure = AAMP_TUNE_FAILURE_UNKNOWN;
         aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
-                        reinterpret_cast<const char *>(systemId),
+                        reinterpret_cast<const char *>(systemId), eMEDIAFORMAT_DASH,
                         reinterpret_cast<const unsigned char *>(mapInfo.data),
-                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e);
+                        mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, &e, nullptr, false);
 
         if (NULL == aampcdmidecryptor->drmSession)
         {
@@ -1294,5 +1336,57 @@ static void gst_aampcdmidecryptor_set_property(GObject * object,
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
+}
+
+static gboolean gst_aampcdmidecryptor_accept_caps(GstBaseTransform * trans,
+        GstPadDirection direction, GstCaps * caps)
+{
+    gboolean ret = TRUE;
+    GST_DEBUG_OBJECT (trans, "received accept caps with direction: %s caps: %" GST_PTR_FORMAT, (direction == GST_PAD_SRC) ? "src" : "sink", caps);
+
+    GstCaps *allowedCaps = NULL;
+
+    if (direction == GST_PAD_SINK)
+    {
+        allowedCaps = gst_pad_query_caps(trans->sinkpad, caps);
+    }
+    else
+    {
+        allowedCaps = gst_pad_query_caps(trans->srcpad, caps);
+    }
+
+    if (!allowedCaps)
+    {
+        GST_ERROR_OBJECT(trans, "Error while query caps on %s pad of plugin with filter caps: %" GST_PTR_FORMAT, (direction == GST_PAD_SRC) ? "src" : "sink", caps);
+        ret = FALSE;
+    }
+    else
+    {
+        GST_DEBUG_OBJECT(trans, "Allowed caps: %" GST_PTR_FORMAT, allowedCaps);
+        ret = gst_caps_is_subset(caps, allowedCaps);
+        gst_caps_unref(allowedCaps);
+    }
+
+    // BCOM-4645: Check if these are same as src pad caps in case direction is GST_PAD_SINK,
+    // we can let it through in this case
+    if (ret == FALSE && direction == GST_PAD_SINK)
+    {
+        guint size = gst_caps_get_size(caps);
+        for (guint i = 0; i < size; i++)
+        {
+            GstStructure* inCaps = gst_caps_get_structure(caps, i);
+            for (int j = 0; srcMimeTypes[j]; j++)
+            {
+                if (gst_structure_has_name(inCaps, srcMimeTypes[j]))
+                {
+                    GST_DEBUG_OBJECT(trans, "found the requested caps in supported src mime types (type:%s), respond as supported!", srcMimeTypes[j]);
+                    ret = TRUE;
+                    break;
+                }
+            }
+        }
+    }
+    GST_DEBUG_OBJECT(trans, "Return from accept_caps: %d", ret);
+    return ret;
 }
 
