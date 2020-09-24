@@ -43,7 +43,12 @@
  */
 static gboolean plugin_init(GstPlugin * plugin)
 {
-	gboolean ret = gst_element_register(plugin, "aamp", GST_RANK_MARGINAL, GST_TYPE_AAMP);
+	guint aamp_rank = GST_RANK_MARGINAL;
+	// set higher rank for aamp plugin when it's used for HLS
+	if (g_getenv("GST_AAMP_EXPOSE_HLS_CAPS")) {
+		aamp_rank = GST_RANK_PRIMARY + 1;
+	}
+	gboolean ret = gst_element_register(plugin, "aamp", aamp_rank, GST_TYPE_AAMP);
 	if (ret)
 	{
 		ret = gst_element_register(plugin, "aampsrc", GST_RANK_PRIMARY, GST_TYPE_AAMPSRC);
