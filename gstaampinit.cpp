@@ -43,7 +43,7 @@
  */
 static gboolean plugin_init(GstPlugin * plugin)
 {
-	gboolean ret = gst_element_register(plugin, "aamp", GST_RANK_MARGINAL, GST_TYPE_AAMP);
+	gboolean ret = gst_element_register(plugin, "aamp", GST_RANK_PRIMARY + 1, GST_TYPE_AAMP);
 	if (ret)
 	{
 		ret = gst_element_register(plugin, "aampsrc", GST_RANK_PRIMARY, GST_TYPE_AAMPSRC);
