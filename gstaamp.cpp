@@ -307,8 +307,9 @@ public:
 	 * @brief Configures gstaamp with stream output formats
 	 * @param[in] format Output format of main media
 	 * @param[in] audioFormat Output format of audio if present
+	 * @param[in] auxFormat Output format of aux audio if present
 	 */
-	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, bool bESChangeStatus)
+	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, StreamOutputFormat auxFormat, bool bESChangeStatus)
 	{
 		GST_INFO_OBJECT(aamp, "Enter format = %d audioFormat = %d", format, audioFormat);
 		this->format = format;
