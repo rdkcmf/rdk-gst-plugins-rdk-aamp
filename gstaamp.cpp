@@ -334,10 +334,14 @@ public:
 	 * @brief Configures gstaamp with stream output formats
 	 * @param[in] format Output format of main media
 	 * @param[in] audioFormat Output format of audio if present
+	 * @param[in] auxFormat Output format of aux audio if present
+	 * @param[in] bESChangeStatus - To force configure the pipeline when audio codec changed (used for DASH)
+	 * @param[in] forwardAudioToAux if audio buffers to be forwarded to aux pipeline
 	 */
-	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, bool bESChangeStatus)
+	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, StreamOutputFormat auxFormat, bool bESChangeStatus, bool forwardAudioToAux)
 	{
-		GST_INFO_OBJECT(aamp, "Enter Configure() format = %d audioFormat = %d, bESChangeStatus %d", format, audioFormat, bESChangeStatus);
+		GST_INFO_OBJECT(aamp, "Enter Configure() format = %d audioFormat = %d, auxFormat = %d, bESChangeStatus %d, forwardAudioToAux %d",
+					format, audioFormat, auxFormat, bESChangeStatus, forwardAudioToAux);
 		this->format = format;
 		this->audioFormat = audioFormat;
 		for (int i = 0; i < STREAM_COUNT; i++)
