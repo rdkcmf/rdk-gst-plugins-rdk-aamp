@@ -298,7 +298,7 @@ public:
 		rate = AAMP_NORMAL_PLAY_RATE;
 		srcPadCapsSent = true;
 		format = FORMAT_INVALID;
-		audioFormat = FORMAT_NONE;
+		audioFormat = FORMAT_INVALID;
 		readyToSend = false;
 	}
 
@@ -833,8 +833,10 @@ static GstCaps* GetGstCaps(StreamOutputFormat format)
 					"mpegversion", G_TYPE_INT, 2,
 					"systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
 			break;
+		case FORMAT_UNKNOWN:
+			g_warning("Unknown format %d\n", format);
+			break;
 		case FORMAT_INVALID:
-		case FORMAT_NONE:
 		default:
 			g_warning("Unsupported format %d\n", format);
 			break;
