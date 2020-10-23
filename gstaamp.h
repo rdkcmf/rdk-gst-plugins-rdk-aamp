@@ -79,6 +79,7 @@ typedef enum _GstAampState GstAampState;
 struct media_stream
 {
 	GstPad *srcpad;
+	gboolean isPaused;
 	gboolean flush;
 	gboolean resetPosition;
 	gboolean streamStart;
@@ -102,6 +103,8 @@ struct _GstAamp
 	gboolean audio_enabled;
 	gchar *location;
 	gint rate;
+	gboolean seekFlush;
+	double spts;
 	GMutex mutex;
 	GstAampStreamer* context;
 	GCond state_changed;

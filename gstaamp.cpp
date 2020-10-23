@@ -77,16 +77,25 @@ enum GstAampProperties
 
 gboolean gst_aamp_push(media_stream* stream, GstMiniObject *obj, gboolean *eosEvent = NULL)
 {
+	GST_TRACE_OBJECT(stream->parent, "Enter gst_aamp_push");
 	gboolean retVal = TRUE;
 	if (GST_IS_BUFFER(obj))
 	{
+		if (stream->isPaused)
+		{
+			GST_WARNING_OBJECT(stream->parent, "gst_pad_push[%s] paused\n", GST_PAD_NAME(stream->srcpad));
+			return FALSE;
+		}
 		GstFlowReturn ret;
 		ret = gst_pad_push(stream->srcpad, GST_BUFFER(obj));
 		if (ret != GST_FLOW_OK)
 		{
 			GST_WARNING_OBJECT(stream->parent, "gst_pad_push[%s] error: %s \n", GST_PAD_NAME(stream->srcpad),
 			        gst_flow_get_name(ret));
-			gst_pad_pause_task(stream->srcpad);
+			retVal = gst_pad_pause_task(stream->srcpad);
+			if (!retVal)
+				GST_WARNING_OBJECT(stream->parent, "gst_pad_push[%s] pausing error \n", GST_PAD_NAME(stream->srcpad));
+			stream->isPaused=TRUE;
 			retVal = FALSE;
 		}
 	}
@@ -121,6 +130,7 @@ gboolean gst_aamp_push(media_stream* stream, GstMiniObject *obj, gboolean *eosEv
  */
 void gst_aamp_stream_add_item(media_stream* stream, gpointer item)
 {
+	GST_TRACE_OBJECT(stream->parent, "Enter gst_aamp_stream_add_item");
 	GstAamp *aamp = GST_AAMP(stream->parent);
 	g_assert(NULL != stream->srcpad);
 	if (stream->parent->enable_src_tasks)
@@ -169,8 +179,8 @@ void gst_aamp_stream_add_item(media_stream* stream, gpointer item)
  */
 void gst_aamp_stream_push_next_item(media_stream* stream)
 {
+	GST_TRACE_OBJECT(stream->parent, "Enter gst_aamp_stream_push_next_item \n");
 	GstAamp *aamp = GST_AAMP(stream->parent);
-	GST_DEBUG_OBJECT(aamp, "Enter\n");
 	gboolean eosSent = FALSE;
 	while (!eosSent)
 	{
@@ -210,6 +220,7 @@ void gst_aamp_stream_push_next_item(media_stream* stream)
  */
 void gst_aamp_stream_start(media_stream* stream)
 {
+	GST_DEBUG_OBJECT(stream->parent, "Enter gst_aamp_stream_start");
 	if(stream->srcpad)
 	{
 		GST_INFO_OBJECT(stream->parent, "start %s pad task", GST_PAD_NAME(stream->srcpad));
@@ -224,6 +235,7 @@ void gst_aamp_stream_start(media_stream* stream)
  */
 void gst_aamp_stream_flush(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_stream_flush");
 	for (int i = 0; i < 2; i++)
 	{
 		media_stream* stream = &aamp->stream[i];
@@ -261,6 +273,7 @@ void gst_aamp_stream_flush(GstAamp *aamp)
  */
 void gst_aamp_stop_and_flush(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_stop_and_flush");
 	aamp->flushing = TRUE;
 	gst_aamp_stream_flush(aamp);
 	for (int i = 0; i < 2; i++)
@@ -294,12 +307,17 @@ public:
 	 */
 	GstAampStreamer(GstAamp * aamp)
 	{
+		GST_DEBUG_OBJECT(aamp, "Enter GstAampStreamer");
 		this->aamp = aamp;
 		rate = AAMP_NORMAL_PLAY_RATE;
 		srcPadCapsSent = true;
 		format = FORMAT_INVALID;
 		audioFormat = FORMAT_INVALID;
 		readyToSend = false;
+		aamp->stream[eMEDIATYPE_VIDEO].isPaused = FALSE;
+		aamp->stream[eMEDIATYPE_AUDIO].isPaused = FALSE;
+		aamp->seekFlush = FALSE;
+		aamp->spts=0.0;
 	}
 
 
@@ -311,9 +329,13 @@ public:
 	 */
 	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, StreamOutputFormat auxFormat, bool bESChangeStatus)
 	{
-		GST_INFO_OBJECT(aamp, "Enter format = %d audioFormat = %d", format, audioFormat);
+		GST_INFO_OBJECT(aamp, "Enter Configure() format = %d audioFormat = %d, auxFormat = %d, bESChangeStatus %d", format, audioFormat, auxFormat, bESChangeStatus);
 		this->format = format;
 		this->audioFormat = audioFormat;
+		aamp->stream[eMEDIATYPE_VIDEO].isPaused = FALSE;
+		aamp->stream[eMEDIATYPE_AUDIO].isPaused = FALSE;
+		aamp->seekFlush = FALSE;
+		aamp->spts = 0.0;
 		gst_aamp_configure(aamp, format, audioFormat);
 	}
 
@@ -325,6 +347,7 @@ public:
 	 */
 	void SendPendingEvents(media_stream* stream, GstClockTime pts)
 	{
+		GST_INFO_OBJECT(aamp, "Enter SendPendingEvents");
 		if (stream->streamStart)
 		{
 			GST_INFO_OBJECT(aamp, "sending new_stream_start\n");
@@ -334,11 +357,13 @@ public:
 			gst_aamp_stream_add_item(stream, gst_event_new_caps(stream->caps));
 			stream->streamStart = FALSE;
 			GST_INFO_OBJECT(aamp, "%s: sent caps\n", __FUNCTION__);
+			stream->isPaused=FALSE;
 		}
 		if (stream->flush)
 		{
 			GST_INFO_OBJECT(aamp, "%s: sending flush start\n", __FUNCTION__);
 			gst_aamp_stream_add_item(stream, gst_event_new_flush_start());
+			stream->isPaused=TRUE;
 
 #ifdef USE_GST1
 			GstEvent* event = gst_event_new_flush_stop(FALSE);
@@ -351,6 +376,7 @@ public:
 		}
 		if (stream->resetPosition)
 		{
+			stream->isPaused=FALSE;
 #ifdef USE_GST1
 			GstSegment segment;
 			gst_segment_init(&segment, GST_FORMAT_TIME);
@@ -363,7 +389,6 @@ public:
 #else
 			GstEvent* event = gst_event_new_new_segment(FALSE, AAMP_NORMAL_PLAY_RATE, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
 #endif
-			GST_INFO_OBJECT(aamp, "%s: sending segment\n", __FUNCTION__);
 			gst_aamp_stream_add_item(stream, event);
 			stream->resetPosition = FALSE;
 		}
@@ -383,6 +408,7 @@ public:
 	 */
 	void Send(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
+		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, len0 %d, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, len0, fpts, fdts, fDuration);
 		gboolean discontinuity = FALSE;
 
 #ifdef AAMP_DISCARD_AUDIO_TRACK
@@ -406,6 +432,26 @@ public:
 		}
 		media_stream* stream = &aamp->stream[mediaType];
 
+		if (stream->isPaused)
+		{
+			if (mediaType==eMEDIATYPE_AUDIO)
+				aamp->stream[eMEDIATYPE_VIDEO].isPaused = TRUE;
+			else
+				aamp->stream[eMEDIATYPE_AUDIO].isPaused = TRUE;
+		}
+
+		if (stream->resetPosition && aamp->player_aamp->aamp->seek_pos_seconds > 0)
+		{
+			aamp->spts = aamp->player_aamp->aamp->seek_pos_seconds;
+			GST_DEBUG_OBJECT(aamp, "Updating spts %f mediaType %s", aamp->spts, mediaTypeStr);
+		}
+
+		if (aamp->spts > 0)
+		{
+			fpts += aamp->spts;
+		}
+
+		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, Updated fpts %lf\n", mediaType, fpts);
 		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
 		GstClockTime dts = (GstClockTime)(fdts * GST_SECOND);
 //#define TRACE_PTS_TRACK 0xff
@@ -440,7 +486,7 @@ public:
 		fwrite(ptr, 1, len0, fp[mediaType] );
 #endif
 
-		while (aamp->player_aamp->aamp->DownloadsAreEnabled())
+		while (aamp->player_aamp->aamp->DownloadsAreEnabled() && !stream->isPaused && stream->srcpad)
 		{
 			size_t len = len0;
 			if (len > MAX_BYTES_TO_SEND)
@@ -489,6 +535,7 @@ public:
 	 */
 	void Send(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration)
 	{
+		GST_DEBUG_OBJECT(aamp, "Enter Send mediaType %d, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, fpts, fdts, fDuration);
 		gboolean discontinuity = FALSE;
 
 #ifdef AAMP_DISCARD_AUDIO_TRACK
@@ -585,6 +632,7 @@ public:
 	 */
 	void UpdateRate(gdouble rate)
 	{
+		GST_INFO_OBJECT(aamp, "Enter UpdateRate rate = %lf", rate);
 		if ( rate != this->rate)
 		{
 			this->rate = rate;
@@ -613,6 +661,7 @@ public:
 	 */
 	bool Discontinuity(MediaType mediaType)
 	{
+		GST_INFO_OBJECT(aamp, "Enter Discontinuity, mediaType = %d", mediaType);
 		aamp->stream[mediaType].resetPosition = TRUE;
 		aamp->stream[mediaType].eventsPending = TRUE;
 		return false;
@@ -625,15 +674,33 @@ public:
 	 */
 	void Flush(double position, int rate, bool shouldTearDown)
 	{
+		if (!aamp->seekFlush)
+		{
+		GST_INFO_OBJECT(aamp, "Enter Stream Flush position = %lf rate = %d shouldTearDown %d", position, rate, shouldTearDown);
+		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
+		{
+			aamp->stream[i].flush = TRUE;
+			aamp->stream[i].eventsPending = TRUE;
+		}
+		aamp->seekFlush = TRUE;
+		}
+	}
+
+	void Stop(bool keepLastFrame)
+	{
+		GST_INFO_OBJECT(aamp, "Enter Stream stop keepLastFrame %d", keepLastFrame);
 		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
 		{
 			aamp->stream[i].resetPosition = TRUE;
 			aamp->stream[i].flush = TRUE;
 			aamp->stream[i].eventsPending = TRUE;
 		}
+		aamp->seekFlush = TRUE;
 	}
+
 	unsigned long getCCDecoderHandle(void)
 	{
+		GST_DEBUG_OBJECT(aamp, "Enter getCCDecoderHandle");
 		GstStructure *structure;
 		GstQuery *query;
 		const GValue *val;
@@ -678,6 +745,26 @@ public:
 		}
 		return (unsigned long)decoder_handle;
 	}
+
+void Stream(void)
+{
+	GST_DEBUG_OBJECT(aamp, "Enter Stream()");
+                for (int i = 0; i < AAMP_TRACK_COUNT; i++)
+                {
+                        aamp->stream[i].resetPosition = TRUE;
+                        aamp->stream[i].eventsPending = TRUE;
+                }
+}
+
+void SeekStreamSink(double position, double rate)
+{
+	GST_DEBUG_OBJECT(aamp, "Enter SeekStreamSink()");
+}
+
+void StopBuffering(bool forceStop)
+{
+	GST_DEBUG_OBJECT(aamp, "Enter StopBuffering()");
+}
 
 	void Event(const AAMPEventPtr& event);
 private:
@@ -734,6 +821,7 @@ G_DEFINE_TYPE_WITH_CODE (GstAamp, gst_aamp, GST_TYPE_ELEMENT, AAMP_TYPE_INIT_COD
 static gboolean gst_report_video_decode_handle(gpointer user_data)
 {
 	GstAamp *aamp = (GstAamp *) user_data;
+	GST_DEBUG_OBJECT(aamp, "Enter gst_report_video_decode_handle");
 	aamp->player_aamp->aamp->NotifyFirstFrameReceived();
 	aamp->decoder_idle_id = 0;
 	return G_SOURCE_REMOVE;
@@ -746,6 +834,7 @@ static gboolean gst_report_video_decode_handle(gpointer user_data)
  */
 static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 {
+	GST_INFO_OBJECT(aamp, "Enter gst_aamp_update_audio_src_pad");
 #ifndef AAMP_DISCARD_AUDIO_TRACK
 	if (NULL != aamp->stream[eMEDIATYPE_AUDIO].srcpad)
 	{
@@ -851,6 +940,7 @@ static GstCaps* GetGstCaps(StreamOutputFormat format)
  */
 void gst_aamp_initialize_stream( GstAamp* parent, media_stream* stream)
 {
+	GST_DEBUG_OBJECT(parent, "Enter gst_aamp_initialize_stream");
 	stream->queue = g_queue_new ();
 	stream->parent = parent;
 	g_mutex_init (&stream->mutex);
@@ -865,6 +955,7 @@ void gst_aamp_initialize_stream( GstAamp* parent, media_stream* stream)
  */
 static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, StreamOutputFormat audioFormat)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_configure format %d, audioFormat %d", format, audioFormat);
 	GstCaps *caps;
 	gchar * padname = NULL;
 	GST_DEBUG_OBJECT(aamp, "format %d audioFormat %d", format, audioFormat);
@@ -874,7 +965,7 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 	{
 		gst_aamp_update_audio_src_pad(aamp);
 		g_mutex_unlock (&aamp->mutex);
-		GST_INFO_OBJECT(aamp, "Already configured");
+		GST_INFO_OBJECT(aamp, "Already configured, sending streamStart");
 		return;
 	}
 	g_mutex_unlock (&aamp->mutex);
@@ -937,10 +1028,14 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 		GST_WARNING_OBJECT(aamp, "Unsupported audioFormat %d", audioFormat);
 	}
 
-	g_mutex_lock (&aamp->mutex);
-	aamp->state = GST_AAMP_CONFIGURED;
-	g_cond_signal(&aamp->state_changed);
-	g_mutex_unlock (&aamp->mutex);
+	if (caps)
+	{
+		GST_INFO_OBJECT(aamp, "Setting aamp->state to GST_AAMP_CONFIGURED");
+		g_mutex_lock (&aamp->mutex);
+		aamp->state = GST_AAMP_CONFIGURED;
+		g_cond_signal(&aamp->state_changed);
+		g_mutex_unlock (&aamp->mutex);
+	}
 }
 
 
@@ -980,7 +1075,7 @@ static void gst_aamp_class_init(GstAampClass * klass)
  */
 static void gst_aamp_init(GstAamp * aamp)
 {
-	GST_AAMP_LOG_TIMING("Enter\n");
+	GST_AAMP_LOG_TIMING("Enter gst_aamp_init");
 	aamp->location = NULL;
 	aamp->rate = AAMP_NORMAL_PLAY_RATE;
 	aamp->audio_enabled = FALSE;
@@ -1009,6 +1104,7 @@ static void gst_aamp_init(GstAamp * aamp)
  */
 void gst_aamp_finalize_stream( media_stream* stream)
 {
+	GST_DEBUG_OBJECT(stream->parent, "Enter gst_aamp_finalize_stream");
 	if (stream->srcpad)
 	{
 		if (stream->caps)
@@ -1037,6 +1133,7 @@ void gst_aamp_finalize_stream( media_stream* stream)
 void gst_aamp_finalize(GObject * object)
 {
 	GstAamp *aamp = GST_AAMP(object);
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_finalize");
 
 	if (aamp->location)
 	{
@@ -1067,6 +1164,7 @@ void gst_aamp_finalize(GObject * object)
  */
 void GstAampStreamer::Event(const AAMPEventPtr &e)
 {
+	GST_TRACE_OBJECT(aamp, "Enter GstAampStreamer::Event");
 		switch (e->getType())
 		{
 			case AAMP_EVENT_TUNED:
@@ -1096,6 +1194,30 @@ void GstAampStreamer::Event(const AAMPEventPtr &e)
 				GST_INFO_OBJECT(aamp, "AAMP_EVENT_TIMED_METADATA");
 				break;
 
+			case AAMP_EVENT_STATE_CHANGED:
+				GST_INFO_OBJECT(aamp, "AAMP_EVENT_STATE_CHANGED");
+				break;
+
+			case AAMP_EVENT_SEEKED:
+				GST_INFO_OBJECT(aamp, "AAMP_EVENT_SEEKED");
+				break;
+
+			case AAMP_EVENT_BITRATE_CHANGED:
+				GST_INFO_OBJECT(aamp, "AAMP_EVENT_BITRATE_CHANGED");
+				break;
+
+			case AAMP_EVENT_BUFFERING_CHANGED:
+				GST_INFO_OBJECT(aamp, "AAMP_EVENT_BUFFERING_CHANGED");
+				break;
+
+			case AAMP_EVENT_AUDIO_TRACKS_CHANGED:
+				GST_INFO_OBJECT(aamp, "AAMP_EVENT_AUDIO_TRACKS_CHANGED");
+				break;
+
+			case AAMP_EVENT_REPORT_ANOMALY:
+				GST_WARNING_OBJECT(aamp, "AAMP_EVENT_REPORT_ANOMALY");
+				break;
+
 			default:
 				GST_DEBUG_OBJECT(aamp, "unknown event %d\n", e->getType());
 				break;
@@ -1110,6 +1232,7 @@ void GstAampStreamer::Event(const AAMPEventPtr &e)
  */
 static gboolean gst_aamp_query_uri(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_query_uri");
 	gboolean ret = TRUE;
 	GstQuery *query = gst_query_new_uri();
 
@@ -1137,6 +1260,7 @@ static gboolean gst_aamp_query_uri(GstAamp *aamp)
  */
 static void gst_aamp_tune_async(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_tune_async");
 	g_mutex_lock(&aamp->mutex);
 	aamp->state = GST_AAMP_TUNING;
 	g_mutex_unlock(&aamp->mutex);
@@ -1152,6 +1276,7 @@ static void gst_aamp_tune_async(GstAamp *aamp)
  */
 static gboolean gst_aamp_configured(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_configured");
 	gboolean ret = FALSE;
 	g_mutex_lock(&aamp->mutex);
 	if ( aamp->state == GST_AAMP_TUNING )
@@ -1171,6 +1296,7 @@ static gboolean gst_aamp_configured(GstAamp *aamp)
  */
 static gboolean gst_aamp_ready(GstAamp *aamp)
 {
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_ready");
 	gboolean ret = FALSE;
 	g_mutex_lock(&aamp->mutex);
 	while (aamp->state < GST_AAMP_READY)
@@ -1191,6 +1317,7 @@ static gboolean gst_aamp_ready(GstAamp *aamp)
 static gboolean gst_aamp_report_on_tune_done(gpointer user_data)
 {
 	GstAamp *aamp = (GstAamp *) user_data;
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_report_on_tune_done");
 	GstElement *pbin = GST_ELEMENT(aamp);
 	while (GST_ELEMENT_PARENT(pbin))
 	{
@@ -1223,7 +1350,7 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 	GstStateChangeReturn ret;
 
 	aamp = GST_AAMP(element);
-	GST_DEBUG_OBJECT(aamp, "Enter");
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_change_state");
 
 	switch (trans)
 	{
@@ -1385,6 +1512,7 @@ static GstStateChangeReturn gst_aamp_change_state(GstElement * element, GstState
 static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 {
 	GstAamp *aamp = GST_AAMP(element);
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_query");
 	gboolean ret = FALSE;
 
 	GST_INFO_OBJECT(aamp, " query %s\n", gst_query_type_get_name(GST_QUERY_TYPE(query)));
@@ -1456,6 +1584,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 static GstFlowReturn gst_aamp_sink_chain(GstPad * pad, GstObject *parent, GstBuffer * buffer)
 {
 	GstAamp *aamp;
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_sink_chain");
 
 	aamp = GST_AAMP(parent);
 	GST_DEBUG_OBJECT(aamp, "chain");
@@ -1474,6 +1603,7 @@ static gboolean gst_aamp_sink_event(GstPad * pad, GstObject *parent, GstEvent * 
 {
 	gboolean res = FALSE;
 	GstAamp *aamp = GST_AAMP(parent);
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_sink_event");
 
 	GST_INFO_OBJECT(aamp, " EVENT %s\n", gst_event_type_get_name(GST_EVENT_TYPE(event)));
 
@@ -1509,6 +1639,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 {
 	gboolean ret = FALSE;
 	GstAamp *aamp = GST_AAMP(parent);
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_src_query");
 
 	GST_TRACE_OBJECT(aamp, " query %s\n", gst_query_type_get_name(GST_QUERY_TYPE(query)));
 
@@ -1614,8 +1745,7 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 {
 	gboolean res = FALSE;
 	GstAamp *aamp = GST_AAMP(parent);
-
-	GST_DEBUG_OBJECT(aamp, " EVENT %s\n", gst_event_type_get_name(GST_EVENT_TYPE(event)));
+	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_src_event EVENT %s\n", gst_event_type_get_name(GST_EVENT_TYPE(event)));
 
 	switch (GST_EVENT_TYPE(event))
 	{
@@ -1634,6 +1764,7 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %"G_GINT64_FORMAT"\n", rate, start );
 				if (flags & GST_SEEK_FLAG_FLUSH)
 				{
+					aamp->seekFlush = TRUE;
 					gst_aamp_stop_and_flush(aamp);
 					if (aamp->enable_src_tasks)
 					{
@@ -1666,6 +1797,8 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 						pos = start / GST_SECOND;
 					}
 					aamp->player_aamp->SetRateAndSeek(rate, pos);
+					aamp->stream[eMEDIATYPE_VIDEO].isPaused = FALSE;
+					aamp->stream[eMEDIATYPE_AUDIO].isPaused = FALSE;
 				}
 				else
 				{
