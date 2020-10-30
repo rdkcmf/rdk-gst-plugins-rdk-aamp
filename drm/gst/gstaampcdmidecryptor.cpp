@@ -393,8 +393,8 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     g_mutex_lock(&aampcdmidecryptor->mutex);
     mutexLocked = TRUE;
     GST_TRACE_OBJECT(aampcdmidecryptor,
-            "Mutex acquired, stream received: %s",
-            aampcdmidecryptor->streamReceived ? "yes" : "no");
+            "Mutex acquired, stream received: %s canWait: %d",
+            aampcdmidecryptor->streamReceived ? "yes" : "no", aampcdmidecryptor->canWait);
 
     if (!aampcdmidecryptor->canWait
             && !aampcdmidecryptor->streamReceived)
@@ -722,8 +722,8 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 	    g_mutex_lock(&aampcdmidecryptor->mutex);
 	    mutexLocked = TRUE;
 	    GST_TRACE_OBJECT(aampcdmidecryptor,
-	            "Mutex acquired, stream received: %s",
-	            aampcdmidecryptor->streamReceived ? "yes" : "no");
+	            "Mutex acquired, stream received: %s canWait: %d",
+	            aampcdmidecryptor->streamReceived ? "yes" : "no", aampcdmidecryptor->canWait);
 
 	    if (!aampcdmidecryptor->canWait
 	            && !aampcdmidecryptor->streamReceived)
@@ -1212,6 +1212,11 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
 #if 0
             aampcdmidecryptor->streamReceived = FALSE;
 #endif /* 0 */
+
+            /* DELIA-46675 - Need to reset canWait to skip condional wait in "gst_aampcdmidecryptor_transform_ip to avoid deadlock
+             *scenario on drm session failure
+             */
+            aampcdmidecryptor->canWait = false;
             if(!aampcdmidecryptor->aamp->licenceFromManifest)
             {
                 AAMPTuneFailure failure = e->getFailure();
