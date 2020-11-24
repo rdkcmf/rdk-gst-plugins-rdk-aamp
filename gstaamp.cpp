@@ -41,6 +41,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define MAX_NUM_BUFFERS_IN_QUEUE 30
 
 #define  GST_AAMP_LOG_TIMING(msg...) GST_FIXME_OBJECT(aamp, msg)
+#define  STREAM_COUNT (sizeof(aamp->stream)/sizeof(aamp->stream[0]))
 
 static const gchar *g_aamp_expose_hls_caps = NULL;
 
@@ -236,7 +237,7 @@ void gst_aamp_stream_start(media_stream* stream)
 void gst_aamp_stream_flush(GstAamp *aamp)
 {
 	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_stream_flush");
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < STREAM_COUNT; i++)
 	{
 		media_stream* stream = &aamp->stream[i];
 		if (stream->srcpad)
@@ -276,7 +277,7 @@ void gst_aamp_stop_and_flush(GstAamp *aamp)
 	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_stop_and_flush");
 	aamp->flushing = TRUE;
 	gst_aamp_stream_flush(aamp);
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < STREAM_COUNT; i++)
 	{
 		media_stream* stream = &aamp->stream[i];
 		if (stream->srcpad)
@@ -314,8 +315,8 @@ public:
 		format = FORMAT_INVALID;
 		audioFormat = FORMAT_INVALID;
 		readyToSend = false;
-		aamp->stream[eMEDIATYPE_VIDEO].isPaused = FALSE;
-		aamp->stream[eMEDIATYPE_AUDIO].isPaused = FALSE;
+		for (int i = 0; i < STREAM_COUNT; i++)
+			aamp->stream[i].isPaused = FALSE;
 		aamp->seekFlush = FALSE;
 		aamp->spts=0.0;
 	}
@@ -331,8 +332,8 @@ public:
 		GST_INFO_OBJECT(aamp, "Enter Configure() format = %d audioFormat = %d, bESChangeStatus %d", format, audioFormat, bESChangeStatus);
 		this->format = format;
 		this->audioFormat = audioFormat;
-		aamp->stream[eMEDIATYPE_VIDEO].isPaused = FALSE;
-		aamp->stream[eMEDIATYPE_AUDIO].isPaused = FALSE;
+		for (int i = 0; i < STREAM_COUNT; i++)
+			aamp->stream[i].isPaused = FALSE;
 		aamp->seekFlush = FALSE;
 		aamp->spts = 0.0;
 		gst_aamp_configure(aamp, format, audioFormat);
@@ -433,10 +434,8 @@ public:
 
 		if (stream->isPaused)
 		{
-			if (mediaType==eMEDIATYPE_AUDIO)
-				aamp->stream[eMEDIATYPE_VIDEO].isPaused = TRUE;
-			else
-				aamp->stream[eMEDIATYPE_AUDIO].isPaused = TRUE;
+			for (int i = 0; i < STREAM_COUNT; i++)
+				aamp->stream[i].isPaused = TRUE;
 		}
 
 		if (stream->resetPosition && aamp->player_aamp->aamp->seek_pos_seconds > 0)
@@ -676,7 +675,7 @@ public:
 		if (!aamp->seekFlush)
 		{
 		GST_INFO_OBJECT(aamp, "Enter Stream Flush position = %lf rate = %d shouldTearDown %d", position, rate, shouldTearDown);
-		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
+		for (int i = 0; i < STREAM_COUNT; i++)
 		{
 			aamp->stream[i].flush = TRUE;
 			aamp->stream[i].eventsPending = TRUE;
@@ -688,7 +687,7 @@ public:
 	void Stop(bool keepLastFrame)
 	{
 		GST_INFO_OBJECT(aamp, "Enter Stream stop keepLastFrame %d", keepLastFrame);
-		for (int i = 0; i < AAMP_TRACK_COUNT; i++)
+		for (int i = 0; i < STREAM_COUNT; i++)
 		{
 			aamp->stream[i].resetPosition = TRUE;
 			aamp->stream[i].flush = TRUE;
@@ -748,7 +747,7 @@ public:
 void Stream(void)
 {
 	GST_DEBUG_OBJECT(aamp, "Enter Stream()");
-                for (int i = 0; i < AAMP_TRACK_COUNT; i++)
+		for (int i = 0; i < STREAM_COUNT; i++)
                 {
                         aamp->stream[i].resetPosition = TRUE;
                         aamp->stream[i].eventsPending = TRUE;
@@ -1539,7 +1538,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %"G_GUINT64_FORMAT"\n", duration);
+				GST_TRACE_OBJECT(aamp, "GST_QUERY_DURATION returning duration %\"G_GUINT64_FORMAT\"\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1671,7 +1670,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			if (format == GST_FORMAT_TIME)
 			{
 				gint64 posMs = aamp->player_aamp->aamp->GetPositionMs();
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %"G_GUINT64_FORMAT" seconds\n", posMs/1000);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %\"G_GUINT64_FORMAT\" seconds\n", posMs/1000);
 				gst_query_set_position(query, GST_FORMAT_TIME, (posMs*GST_MSECOND ));
 				ret = TRUE;
 			}
@@ -1686,7 +1685,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %"G_GUINT64_FORMAT"\n", duration);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %\"G_GUINT64_FORMAT\"\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1760,7 +1759,7 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 			gst_event_parse_seek(event, &rate, &format, &flags, &start_type, &start, &stop_type, &stop);
 			if (format == GST_FORMAT_TIME)
 			{
-				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %"G_GINT64_FORMAT"\n", rate, start );
+				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %\"G_GINT64_FORMAT\"\n", rate, start );
 				if (flags & GST_SEEK_FLAG_FLUSH)
 				{
 					aamp->seekFlush = TRUE;
