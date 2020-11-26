@@ -409,7 +409,7 @@ public:
 	 */
 	void Send(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
-		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, len0 %d, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, len0, fpts, fdts, fDuration);
+		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, len0 %lu, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, len0, fpts, fdts, fDuration);
 		gboolean discontinuity = FALSE;
 
 #ifdef AAMP_DISCARD_AUDIO_TRACK
@@ -732,7 +732,7 @@ public:
 				else
 				{
 					decoder_handle = g_value_get_pointer(val);
-					GST_DEBUG_OBJECT(aamp, "video decoder handle: %x\n", decoder_handle);
+					GST_DEBUG_OBJECT(aamp, "video decoder handle: %p\n", decoder_handle);
 				}
 			}
 			else
@@ -1539,7 +1539,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, "GST_QUERY_DURATION returning duration %\"G_GUINT64_FORMAT\"\n", duration);
+				GST_TRACE_OBJECT(aamp, "GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1671,7 +1671,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			if (format == GST_FORMAT_TIME)
 			{
 				gint64 posMs = aamp->player_aamp->aamp->GetPositionMs();
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %\"G_GUINT64_FORMAT\" seconds\n", posMs/1000);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_POSITION position %" G_GUINT64_FORMAT " seconds\n", posMs/1000);
 				gst_query_set_position(query, GST_FORMAT_TIME, (posMs*GST_MSECOND ));
 				ret = TRUE;
 			}
@@ -1686,7 +1686,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			{
 				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
-				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %\"G_GUINT64_FORMAT\"\n", duration);
+				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
 				ret = TRUE;
 			}
 			else
@@ -1760,7 +1760,7 @@ static gboolean gst_aamp_src_event(GstPad * pad, GstObject *parent, GstEvent * e
 			gst_event_parse_seek(event, &rate, &format, &flags, &start_type, &start, &stop_type, &stop);
 			if (format == GST_FORMAT_TIME)
 			{
-				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %\"G_GINT64_FORMAT\"\n", rate, start );
+				GST_INFO_OBJECT(aamp, "sink pad : seek GST_FORMAT_TIME: rate %f, pos %" G_GINT64_FORMAT "\n", rate, start );
 				if (flags & GST_SEEK_FLAG_FLUSH)
 				{
 					aamp->seekFlush = TRUE;
