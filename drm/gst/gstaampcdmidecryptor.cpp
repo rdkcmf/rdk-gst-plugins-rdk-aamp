@@ -1217,28 +1217,35 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
              *		scenario on drm session failure
              */
             aampcdmidecryptor->canWait = false;
-            if(!aampcdmidecryptor->aamp->licenceFromManifest)
-            {
-                AAMPTuneFailure failure = e->getFailure();
-                if(AAMP_TUNE_FAILURE_UNKNOWN != failure)
-                {
-                    long responseCode = e->getResponseCode();
-                    bool selfAbort = (failure == AAMP_TUNE_LICENCE_REQUEST_FAILED && (responseCode == CURLE_ABORTED_BY_CALLBACK || responseCode == CURLE_WRITE_ERROR));
-                    if (!selfAbort)
-                    {
-                        aampcdmidecryptor->aamp->SendErrorEvent(failure);
-                    }
-                    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)failure);
-                    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failure);
-                }
-		else
-		{
-		    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL);
-		}
-            }
-            GST_ERROR_OBJECT(aampcdmidecryptor,"Failed to create DRM Session\n");
+	    /* session manager fails to create session when state is inactive. Skip sending error event
+	     * in this scenario. Later player will change it to active after processing SetLanguage(), or for the next Tune.
+	     */
+	    if(SessionMgrState::eSESSIONMGR_ACTIVE == aampcdmidecryptor->sessionManager->getSessionMgrState())
+	    {
+		    if(!aampcdmidecryptor->aamp->licenceFromManifest)
+		    {
+			AAMPTuneFailure failure = e->getFailure();
+			if(AAMP_TUNE_FAILURE_UNKNOWN != failure)
+				 {
+			    long responseCode = e->getResponseCode();
+			    bool selfAbort = (failure == AAMP_TUNE_LICENCE_REQUEST_FAILED && (responseCode == CURLE_ABORTED_BY_CALLBACK || responseCode == CURLE_WRITE_ERROR));
+			    if (!selfAbort)
+			    {
+				aampcdmidecryptor->aamp->SendErrorEvent(failure);
+			    }
+			    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL, (int)failure);
+			    aampcdmidecryptor->aamp->profiler.SetDrmErrorCode((int)failure);
+			}
+			else
+			{
+			    aampcdmidecryptor->aamp->profiler.ProfileError(PROFILE_BUCKET_LA_TOTAL);
+			}
+		    }
+		    GST_ERROR_OBJECT(aampcdmidecryptor,"Failed to create DRM Session\n");
+	    }
             result = TRUE;
-        } else
+        } 
+	else
         {
             aampcdmidecryptor->streamReceived = TRUE;
             if(!aampcdmidecryptor->aamp->licenceFromManifest)

@@ -670,7 +670,7 @@ public:
 	 * @param[in] position seek position
 	 * @param[in] rate playback rate
 	 */
-	void Flush(double position, float rate, bool shouldTearDown)
+	void Flush(double position, int rate, bool shouldTearDown)
 	{
 		if (!aamp->seekFlush)
 		{
