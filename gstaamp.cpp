@@ -33,6 +33,7 @@
 #include "gstaamp.h"
 #include "main_aamp.h"
 #include "priv_aamp.h"
+#include "AampGstUtils.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
@@ -881,55 +882,6 @@ static void gst_aamp_update_audio_src_pad(GstAamp * aamp)
 #endif
 }
 
-
-/**
- * @brief Creates GstCaps corresponding to stream format
- * @param[in] format Output format of stream
- * @retval GstCaps corresponding to stream format
- * @note Caller shall free returned caps
- */
-static GstCaps* GetGstCaps(StreamOutputFormat format)
-{
-	GstCaps * caps = NULL;
-	switch (format)
-	{
-		case FORMAT_MPEGTS:
-			caps = gst_caps_new_simple ("video/mpegts",
-					"systemstream", G_TYPE_BOOLEAN, TRUE,
-					"packetsize", G_TYPE_INT, 188, NULL);
-			break;
-		case FORMAT_ISO_BMFF:
-			caps = gst_caps_new_simple("video/quicktime", NULL, NULL);
-			break;
-		case FORMAT_AUDIO_ES_AAC:
-			caps = gst_caps_new_simple ("audio/mpeg",
-					"mpegversion", G_TYPE_INT, 2,
-					"stream-format", G_TYPE_STRING, "adts", NULL);
-			break;
-		case FORMAT_AUDIO_ES_AC3:
-			caps = gst_caps_new_simple ("audio/ac3", NULL, NULL);
-			break;
-		case FORMAT_AUDIO_ES_EC3:
-			caps = gst_caps_new_simple ("audio/x-eac3", NULL, NULL);
-			break;
-		case FORMAT_VIDEO_ES_H264:
-			caps = gst_caps_new_simple ("video/x-h264", NULL, NULL);
-			break;
-		case FORMAT_VIDEO_ES_MPEG2:
-			caps = gst_caps_new_simple ("video/mpeg",
-					"mpegversion", G_TYPE_INT, 2,
-					"systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
-			break;
-		case FORMAT_UNKNOWN:
-			g_warning("Unknown format %d\n", format);
-			break;
-		case FORMAT_INVALID:
-		default:
-			g_warning("Unsupported format %d\n", format);
-			break;
-	}
-	return caps;
-}
 
 /**
  * @brief Initialize a stream.
