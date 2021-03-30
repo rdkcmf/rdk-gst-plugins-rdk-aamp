@@ -48,7 +48,7 @@ GST_DEBUG_CATEGORY(gst_aampwidevinedecryptor_debug_category);
 
 static GstStaticPadTemplate gst_aampwidevinedecryptor_src_template =
         GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
-        GST_STATIC_CAPS("video/x-h264;audio/mpeg;video/x-h265;audio/x-eac3;audio/x-gst-fourcc-ec_3"));
+        GST_STATIC_CAPS("video/x-h264;video/x-h264(memory:SecMem);audio/mpeg;video/x-h265;video/x-h265(memory:SecMem);audio/x-eac3;audio/x-gst-fourcc-ec_3"));
  
 static GstStaticPadTemplate gst_aampwidevinedecryptor_sink_template =
         GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
