@@ -39,7 +39,14 @@ GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
 
 #define MAX_BYTES_TO_SEND (188*1024)
-#define MAX_NUM_BUFFERS_IN_QUEUE 30
+/* XIONE-1190- Dms Redbull channel not played mostly.
+ * This issue is due to injection get blocked as queue
+ * get filled and not consumed by consumer.
+ * Temporary Fix
+ * If we increase the size of queue to 50 from 30
+ * then this issue is not observed
+ */
+#define MAX_NUM_BUFFERS_IN_QUEUE 50
 
 #define  GST_AAMP_LOG_TIMING(msg...) GST_FIXME_OBJECT(aamp, msg)
 #define  STREAM_COUNT (sizeof(aamp->stream)/sizeof(aamp->stream[0]))
