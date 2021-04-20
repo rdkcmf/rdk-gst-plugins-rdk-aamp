@@ -1101,31 +1101,71 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
     {
         const gchar* systemId;
         const gchar* origin;
+        unsigned char *outData = NULL;
+        unsigned int outDataLen = 0;
         GstBuffer* initdatabuffer;
-
-        GST_INFO_OBJECT(aampcdmidecryptor,
-                "Received encrypted event: Proceeding to parse initData\n");
-        gst_event_parse_protection(event, &systemId, &initdatabuffer, &origin);
-        GST_DEBUG_OBJECT(aampcdmidecryptor, "systemId: %s", systemId);
-        GST_DEBUG_OBJECT(aampcdmidecryptor, "origin: %s", origin);
-		if (!g_str_equal(systemId, aampcdmidecryptor->selectedProtection))
-        {
-            gst_event_unref(event);
-            result = TRUE;
-            break;
-        }
-
-        GstMapInfo mapInfo;
-        if (!gst_buffer_map(initdatabuffer, &mapInfo, GST_MAP_READ))
-            break;
-        GST_DEBUG_OBJECT(aampcdmidecryptor, "scheduling keyNeeded event");
 
         //We need to get the sinkpad for sending upstream queries and
         //getting the current pad capability ie, VIDEO or AUDIO
         //in order to support tune time profiling
         GstPad * sinkpad = gst_element_get_static_pad(
                 reinterpret_cast<GstElement*>(aampcdmidecryptor), "sink");
+        //Query to get the aamp reference from gstaamp
+        //this aamp instance is used for profiling
+        if (NULL == aampcdmidecryptor->aamp)
+        {
+            const GValue *val;
+            GstStructure * structure = gst_structure_new("get_aamp_instance",
+                    "aamp_instance", G_TYPE_POINTER, 0, NULL);
+            GstQuery *query = gst_query_new_custom(GST_QUERY_CUSTOM, structure);
+            gboolean res = gst_pad_peer_query(sinkpad, query);
+            if (res)
+            {
+                structure = (GstStructure *) gst_query_get_structure(query);
+                val = (gst_structure_get_value(structure, "aamp_instance"));
+                aampcdmidecryptor->aamp =
+                        (PrivateInstanceAAMP*) g_value_get_pointer(val);
+            }
+            gst_query_unref(query);
+        }
 
+        if (aampcdmidecryptor->aamp == NULL)
+        {
+            GST_ERROR_OBJECT(aampcdmidecryptor,
+                    "aampcdmidecryptor unable to retrieve aamp instance\n");
+            result = FALSE;
+            break;
+        }
+
+        GST_DEBUG_OBJECT(aampcdmidecryptor,
+                "Received encrypted event: Proceeding to parse initData\n");
+        gst_event_parse_protection(event, &systemId, &initdatabuffer, &origin);
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "systemId: %s", systemId);
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "origin: %s", origin);
+		/** If WideVine KeyID workaround is present check the systemId is clearKey **/
+        if (aampcdmidecryptor->aamp->mIsWVKIDWorkaround){ 
+            if(!g_str_equal(systemId, CLEARKEY_PROTECTION_SYSTEM_ID) ){
+                gst_event_unref(event);
+                result = TRUE;
+                break;
+            }
+            GST_DEBUG_OBJECT(aampcdmidecryptor, "\nWideVine KeyID workaround is present, Select KeyID from Clear Key\n");
+            systemId = WIDEVINE_PROTECTION_SYSTEM_ID ;
+
+        }else{ /* else check the selected protection system */
+            if (!g_str_equal(systemId, aampcdmidecryptor->selectedProtection))
+            {
+                gst_event_unref(event);
+                result = TRUE;
+                break;
+            }
+        }
+
+        GstMapInfo mapInfo;
+        if (!gst_buffer_map(initdatabuffer, &mapInfo, GST_MAP_READ))
+            break;
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "scheduling keyNeeded event");
+        
         if (eMEDIATYPE_MANIFEST == aampcdmidecryptor->streamtype)
         {
             GstCaps* caps = gst_pad_get_current_caps(sinkpad);
@@ -1162,31 +1202,13 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
             gst_caps_unref(caps);
         }
 
-        //Query to get the aamp reference from gstaamp
-        //this aamp instance is used for profiling
-        if (NULL == aampcdmidecryptor->aamp)
-        {
-            const GValue *val;
-            GstStructure * structure = gst_structure_new("get_aamp_instance",
-                    "aamp_instance", G_TYPE_POINTER, 0, NULL);
-            GstQuery *query = gst_query_new_custom(GST_QUERY_CUSTOM, structure);
-            gboolean res = gst_pad_peer_query(sinkpad, query);
-            if (res)
-            {
-                structure = (GstStructure *) gst_query_get_structure(query);
-                val = (gst_structure_get_value(structure, "aamp_instance"));
-                aampcdmidecryptor->aamp =
-                        (PrivateInstanceAAMP*) g_value_get_pointer(val);
+        if (aampcdmidecryptor->aamp->mIsWVKIDWorkaround){ 
+            GST_DEBUG_OBJECT(aampcdmidecryptor, "\nWideVine KeyID workaround is present, Applying WideVine KID workaround\n");
+            outData = aampcdmidecryptor->aamp->ReplaceKeyIDPsshData(reinterpret_cast<unsigned char *>(mapInfo.data), mapInfo.size, outDataLen);
+            if (NULL == outData){
+                GST_ERROR_OBJECT(aampcdmidecryptor, "\nFailed to Apply WideVine KID workaround!\n");
+                break;
             }
-            gst_query_unref(query);
-        }
-
-        if (aampcdmidecryptor->aamp == NULL)
-        {
-            GST_ERROR_OBJECT(aampcdmidecryptor,
-                    "Failed to get aamp instance\n");
-            result = FALSE;
-            break;
         }
 
         if(!aampcdmidecryptor->aamp->licenceFromManifest)
@@ -1198,12 +1220,18 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         GST_DEBUG_OBJECT(aampcdmidecryptor, "\n acquired lock for mutex\n");
         aampcdmidecryptor->sessionManager = aampcdmidecryptor->aamp->mDRMSessionManager;
         DrmMetaDataEventPtr e = std::make_shared<DrmMetaDataEvent>(AAMP_TUNE_FAILURE_UNKNOWN, "", 0, 0, false);
-        aampcdmidecryptor->drmSession =
+        if (aampcdmidecryptor->aamp->mIsWVKIDWorkaround){
+            aampcdmidecryptor->drmSession =
+                aampcdmidecryptor->sessionManager->createDrmSession(
+                        reinterpret_cast<const char *>(systemId), eMEDIAFORMAT_DASH,
+                        outData, outDataLen, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, e, nullptr, false);
+        }else{
+            aampcdmidecryptor->drmSession =
                 aampcdmidecryptor->sessionManager->createDrmSession(
                         reinterpret_cast<const char *>(systemId), eMEDIAFORMAT_DASH,
                         reinterpret_cast<const unsigned char *>(mapInfo.data),
                         mapInfo.size, aampcdmidecryptor->streamtype, aampcdmidecryptor->aamp, e, nullptr, false);
-
+        }
         if (NULL == aampcdmidecryptor->drmSession)
         {
 /* For DELIA-32832 - Avoided setting 'streamReceived' as FALSE if createDrmSession() failed after a successful case.
@@ -1277,6 +1305,10 @@ static gboolean gst_aampcdmidecryptor_sink_event(GstBaseTransform * trans,
         gst_object_unref(sinkpad);
         gst_buffer_unmap(initdatabuffer, &mapInfo);
         gst_event_unref(event);
+        if(outData){
+            free(outData);
+            outData = NULL;
+        }
 
         break;
     }
