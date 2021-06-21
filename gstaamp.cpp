@@ -37,7 +37,17 @@
 
 GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
+
 #define MAX_BYTES_TO_SEND (188*1024)
+/* XIONE-1190- Dms Redbull channel not played mostly.
+ * This issue is due to injection get blocked as queue
+ * get filled and not consumed by consumer.
+ * Temporary Fix
+ * If we increase the size of queue to 50 from 30
+ * then this issue is not observed
+ */
+#define MAX_NUM_BUFFERS_IN_QUEUE 50
+
 #define  GST_AAMP_LOG_TIMING(msg...) GST_FIXME_OBJECT(aamp, msg)
 #define STREAM_COUNT (sizeof(aamp->stream)/sizeof(aamp->stream[0]))
 
@@ -135,6 +145,14 @@ void gst_aamp_stream_add_item(media_stream* stream, gpointer item)
 	if (stream->parent->enable_src_tasks)
 	{
 		g_mutex_lock(&stream->mutex);
+		while (g_queue_get_length(stream->queue) > MAX_NUM_BUFFERS_IN_QUEUE)
+		{
+			g_cond_wait(&stream->cond, &stream->mutex);
+			if (aamp->flushing)
+			{
+				break;
+			}
+		}
 		if (aamp->flushing)
 		{
 			GstMiniObject *obj = (GstMiniObject *) item;
@@ -188,6 +206,7 @@ void gst_aamp_stream_push_next_item(media_stream* stream)
 			break;
 		}
 		gpointer item = g_queue_pop_head(stream->queue);
+		g_cond_broadcast(&stream->cond);
 		g_mutex_unlock(&stream->mutex);
 		if (item)
 		{
