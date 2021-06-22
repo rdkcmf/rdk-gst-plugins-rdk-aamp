@@ -170,6 +170,12 @@ if(CMAKE_SOC_PLATFORM_REALTEK)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAAMP_STUBS_FOR_JS")
 	set(AAMP_CLI_SOURCES ${AAMP_CLI_SOURCES} drm/ave/StubsForAVEPlayer.cpp)
 endif()
+
+if (CMAKE_AMLOGIC_SOC)
+        message("CMAKE_AMLOGIC_SOC set")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAMLOGIC")
+endif()
+
 #TODO Remove once PrivateInstanceAAMP is compilation flag independent.
 if(CMAKE_USE_SECCLIENT)
 	message("CMAKE_USE_SECCLIENT set")
