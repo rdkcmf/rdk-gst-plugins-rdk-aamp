@@ -64,7 +64,6 @@ struct _GstAampCDMIDecryptor
     gboolean                        notifyDecryptError;
     gboolean                        streamEncryped;
     gboolean                        ignoreSVP; //No need for svp for clearKey streams
-    GstCaps*                        sinkCaps;
     //GstBuffer*                    initDataBuffer;
 };
 
