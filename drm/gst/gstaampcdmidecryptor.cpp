@@ -25,6 +25,9 @@
 #include <gst/gst.h>
 #include <gst/base/gstbasetransform.h>
 #include "gstaampcdmidecryptor.h"
+#include <open_cdm.h>
+#include <open_cdm_adapter.h>
+#include <dlfcn.h>
 
 #ifndef USE_OPENCDM_ADAPTER
 #include <gst/base/gstbytereader.h>
@@ -61,7 +64,7 @@ enum
 #define DEBUG_FUNC()
 #endif
 
-static const gchar *srcMimeTypes[] = { "video/x-h264", "audio/mpeg", "video/x-h265", "audio/x-eac3", "audio/x-gst-fourcc-ec_3", nullptr };
+static const gchar *srcMimeTypes[] = { "video/x-h264", "video/x-h264(memory:SecMem)", "audio/mpeg", "video/x-h265", "video/x-h265(memory:SecMem)", "audio/x-eac3", "audio/x-gst-fourcc-ec_3", nullptr };
 
 /* prototypes */
 static void gst_aampcdmidecryptor_dispose(GObject*);
@@ -78,6 +81,7 @@ static void gst_aampcdmidecryptor_set_property(GObject * object,
         guint prop_id, const GValue * value, GParamSpec * pspec);
 static gboolean gst_aampcdmidecryptor_accept_caps(GstBaseTransform * trans,
         GstPadDirection direction, GstCaps * caps);
+static OpenCDMError(*OCDMGstTransformCaps)(GstCaps **);
 
 
 /* class initialization */
@@ -110,8 +114,11 @@ static void gst_aampcdmidecryptor_class_init(
             gst_aampcdmidecryptor_sink_event);
     base_transform_class->transform_ip = GST_DEBUG_FUNCPTR(
             gst_aampcdmidecryptor_transform_ip);
+
+#if !defined(AMLOGIC)
     base_transform_class->accept_caps = GST_DEBUG_FUNCPTR(
             gst_aampcdmidecryptor_accept_caps);
+#endif
     base_transform_class->transform_ip_on_passthrough = FALSE;
 
     gst_element_class_set_static_metadata(GST_ELEMENT_CLASS(klass),
@@ -127,6 +134,7 @@ static void gst_aampcdmidecryptor_init(
 {
     DEBUG_FUNC();
 
+    const char* ocdmgsttransformcaps = "opencdm_gstreamer_transform_caps";
     GstBaseTransform* base = GST_BASE_TRANSFORM(aampcdmidecryptor);
 
     gst_base_transform_set_in_place(base, TRUE);
@@ -150,7 +158,13 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->notifyDecryptError = true;
     aampcdmidecryptor->streamEncryped = false;
     aampcdmidecryptor->ignoreSVP = false;
+    aampcdmidecryptor->sinkCaps = NULL;
 
+    OCDMGstTransformCaps = (OpenCDMError(*)(GstCaps**))dlsym(RTLD_DEFAULT, ocdmgsttransformcaps);
+    if (OCDMGstTransformCaps)
+	GST_INFO_OBJECT(aampcdmidecryptor, "Has opencdm_gstreamer_transform_caps support \n");
+    else
+	GST_INFO_OBJECT(aampcdmidecryptor, "No opencdm_gstreamer_transform_caps support \n");
     //GST_DEBUG_OBJECT(aampcdmidecryptor, "******************Init called**********************\n");
 }
 
@@ -167,6 +181,11 @@ void gst_aampcdmidecryptor_dispose(GObject * object)
     {
         gst_event_unref(aampcdmidecryptor->protectionEvent);
         aampcdmidecryptor->protectionEvent = NULL;
+    }
+    if (aampcdmidecryptor->sinkCaps)
+    {
+        gst_caps_unref(aampcdmidecryptor->sinkCaps);
+        aampcdmidecryptor->sinkCaps = NULL;
     }
 
     g_mutex_clear(&aampcdmidecryptor->mutex);
@@ -330,6 +349,9 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
         }
 
         gst_aampcdmicapsappendifnotduplicate(transformedCaps, out);
+
+	if (direction == GST_PAD_SINK && !gst_caps_is_empty(transformedCaps) && OCDMGstTransformCaps)
+		OCDMGstTransformCaps(&transformedCaps);
     }
 
     if (filter)
@@ -344,6 +366,17 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
     }
 
     GST_LOG_OBJECT(trans, "returning %" GST_PTR_FORMAT, transformedCaps);
+    if (direction == GST_PAD_SINK && !gst_caps_is_empty(transformedCaps))
+    {
+        // clean up previous caps
+        if (aampcdmidecryptor->sinkCaps)
+        {
+            gst_caps_unref(aampcdmidecryptor->sinkCaps);
+            aampcdmidecryptor->sinkCaps = NULL;
+        }
+        aampcdmidecryptor->sinkCaps = gst_caps_copy(transformedCaps);
+        GST_DEBUG_OBJECT(trans, "Set sinkCaps to %" GST_PTR_FORMAT, aampcdmidecryptor->sinkCaps);
+    }
     return transformedCaps;
 }
 
@@ -387,6 +420,16 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     {
         GST_DEBUG_OBJECT(aampcdmidecryptor,
                 "Failed to get GstProtection metadata from buffer %p, could be clear buffer",buffer);
+
+        // call decrypt even for clear samples in order to copy it to a secure buffer. If secure buffers are not supported
+        // decrypt() call will return without doing anything
+	if (aampcdmidecryptor->drmSession != NULL)
+		errorCode = aampcdmidecryptor->drmSession->decrypt(keyIDBuffer, ivBuffer, buffer, subSampleCount, subsamplesBuffer, aampcdmidecryptor->sinkCaps);
+	else
+	{ /* If drmSession creation failed, then the call will be aborted here */
+		result = GST_FLOW_NOT_SUPPORTED;
+		GST_DEBUG_OBJECT(aampcdmidecryptor, "drmSession is **** NULL ****, returning GST_FLOW_NOT_SUPPORTED");
+	}
         goto free_resources;
     }
 
@@ -499,7 +542,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
         }
     }
 
-    errorCode = aampcdmidecryptor->drmSession->decrypt(keyIDBuffer, ivBuffer, buffer, subSampleCount, subsamplesBuffer);
+    errorCode = aampcdmidecryptor->drmSession->decrypt(keyIDBuffer, ivBuffer, buffer, subSampleCount, subsamplesBuffer, aampcdmidecryptor->sinkCaps);
 
     aampcdmidecryptor->streamEncryped = true;
     if (errorCode != 0 || aampcdmidecryptor->hdcpOpProtectionFailCount)
