@@ -38,7 +38,6 @@
 GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
 
-
 /* XIONE-1190- Dms Redbull Linear channel and Redbull Events are not played
  *
  * This issue is due to Audio packets are lately muxed in the stream, and
@@ -58,10 +57,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
  * due to all the packets get added in the queue without any max threshold value.
  *
  * Temporary Fix
- * If we increase the size of queue to 50 from 30
- * then this issue is not observed
+ * 
+ * Increasing the size of queue from 30 to 100.
  */
-#define MAX_NUM_BUFFERS_IN_QUEUE 50
+#define MAX_NUM_BUFFERS_IN_QUEUE 100
 
 #define  GST_AAMP_LOG_TIMING(msg...) GST_FIXME_OBJECT(aamp, msg)
 #define  STREAM_COUNT (sizeof(aamp->stream)/sizeof(aamp->stream[0]))
