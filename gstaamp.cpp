@@ -38,10 +38,32 @@
 GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
 
+<<<<<<< HEAD   (886f6c RDK-27796: Split Audio Output (Dual Decode) via Onboard Blue)
 #define MAX_BYTES_TO_SEND (188*1024)
 /* XIONE-1190- Dms Redbull channel not played mostly.
  * This issue is due to injection get blocked as queue
  * get filled and not consumed by consumer.
+=======
+
+/* XIONE-1190- Dms Redbull Linear channel and Redbull Events are not played
+ *
+ * This issue is due to Audio packets are lately muxed in the stream, and
+ * Gstreamer is blocking the Video injection until the Audio packets are received.
+ *
+ * Since the buffer size is very less, only video packets get filled initially and
+ * waiting for Gstreamer to consume the data.
+ *
+ * But Gstreamer is waiting for Audio Packets and not consuming the Video data.
+ *
+ * When we Increase the buffer size, it provides some space for adding more video packets
+ * in the queue, when Gstreamer is blocking the push.
+ *
+ * Meanwhile Audio Packets will be received, and PLayback will start Smoothly.
+ *
+ * When we try to remove this Buffer size condition check, memory leak happened,
+ * due to all the packets get added in the queue without any max threshold value.
+ *
+>>>>>>> CHANGE (0c1654 DELIA-51547 gstaamp.cpp refactoring - distinct naming and sh)
  * Temporary Fix
  * If we increase the size of queue to 50 from 30
  * then this issue is not observed
@@ -309,6 +331,138 @@ void gst_aamp_stop_and_flush(GstAamp *aamp)
  */
 class GstAampStreamer : public StreamSink, public AAMPEventObjectListener
 {
+private:
+	/**
+	 * @brief Inject stream buffer to gstreamer pipeline
+	 * @param[in] mediaType stream type
+	 * @param[in] ptr buffer pointer
+	 * @param[in] len0 length of buffer
+	 * @param[in] fpts PTS of buffer (in sec)
+	 * @param[in] fdts DTS of buffer (in sec)
+	 * @param[in] fDuration duration of buffer (in sec)
+	 * @param[in] copy to map or transfer the buffer
+	 */
+	void SendHelper(MediaType mediaType, const void *ptr, size_t len, double fpts, double fdts, double fDuration, bool copy)
+	{
+		const char* mediaTypeStr = (mediaType == eMEDIATYPE_AUDIO) ? "AUDIO" : "VIDEO";
+		media_stream* stream = &aamp->stream[mediaType];
+		gboolean discontinuity = FALSE;
+		bool bPushBuffer = true;
+
+		GST_DEBUG_OBJECT(aamp, "%s:%d MediaType(%s) len(%lu), fpts(%lf), fdts(%lf), fDuration(%lf)\n", __FUNCTION__, __LINE__, mediaTypeStr, len, fpts, fdts, fDuration);
+
+#ifdef AAMP_DISCARD_AUDIO_TRACK
+		if (mediaType == eMEDIATYPE_AUDIO)
+		{
+			GST_WARNING_OBJECT(aamp, "%s:%d Discard audio track- not sending data\n", __FUNCTION__, __LINE__);
+			return;
+		}
+#endif
+
+		if (!readyToSend)
+		{
+			if (!gst_aamp_ready(aamp))
+			{
+				GST_WARNING_OBJECT(aamp, "%s:%d Not ready to consume data type(%s)\n", __FUNCTION__, __LINE__, mediaTypeStr);
+				return;
+			}
+			readyToSend = true;
+		}
+
+		if (stream->srcpad)
+		{
+			if (copy)
+			{
+				if (stream->isPaused)
+				{
+					for (int i = 0; i < STREAM_COUNT; i++)
+					{
+						aamp->stream[i].isPaused = TRUE;
+					}
+				}
+
+				if (stream->resetPosition && aamp->player_aamp->aamp->seek_pos_seconds > 0)
+				{
+					aamp->spts = aamp->player_aamp->aamp->seek_pos_seconds;
+					GST_DEBUG_OBJECT(aamp, "%s:%d Updating spts(%f) mediaType(%s)", __FUNCTION__, __LINE__, aamp->spts, mediaTypeStr);
+				}
+
+				if (aamp->spts > 0)
+				{
+					fpts += aamp->spts;
+				}
+
+				GST_TRACE_OBJECT(aamp, "%s:%d MediaType(%d) Updated fpts(%lf)\n", __FUNCTION__, __LINE__, mediaType, fpts);
+
+				bPushBuffer = !stream->isPaused;
+			}
+		}
+		else
+		{
+			GST_WARNING_OBJECT(aamp, "%s:%d Pad NULL mediaType(%s) len(%d) fpts(%f)\n", __FUNCTION__, __LINE__, mediaTypeStr, (int)len, fpts);
+			return;
+		}
+
+		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
+		GstClockTime dts = (GstClockTime)(fdts * GST_SECOND);
+
+		if(stream->eventsPending)
+		{
+			SendPendingEvents(stream, pts);
+			discontinuity = TRUE;
+		}
+
+		if (aamp->player_aamp->aamp->DownloadsAreEnabled() && bPushBuffer)
+		{
+			GstBuffer *buffer;
+
+			if (copy)
+			{
+				buffer = gst_buffer_new_allocate(NULL, (gsize)len, NULL);
+
+				if (buffer)
+				{
+					GstMapInfo map;
+					gst_buffer_map(buffer, &map, GST_MAP_WRITE);
+					memcpy(map.data, ptr, len);
+					gst_buffer_unmap(buffer, &map);
+					GST_BUFFER_PTS(buffer) = pts;
+					GST_BUFFER_DTS(buffer) = dts;
+				}
+				else
+				{
+					bPushBuffer = FALSE;
+				}
+			}
+			else
+			{
+				buffer = gst_buffer_new_wrapped ((gpointer)ptr ,(gsize)len);
+
+				if (buffer)
+				{
+					GST_BUFFER_PTS(buffer) = pts;
+					GST_BUFFER_DTS(buffer) = dts;
+				}
+				else
+				{
+					bPushBuffer = FALSE;
+				}
+			}
+
+			if (bPushBuffer)
+			{
+				if (discontinuity)
+				{
+					GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_DISCONT);
+				}
+
+				gst_aamp_stream_add_item (stream, buffer);
+			}
+		}
+
+		GST_TRACE_OBJECT(aamp, "%s:%d Exit", __FUNCTION__, __LINE__);
+	}
+
 public:
 	/**
 	 * @brief GstAampStreamer Constructor
@@ -407,234 +561,37 @@ public:
 		stream->eventsPending = FALSE;
 	}
 
-
 	/**
-	 * @brief Sends stream data to src pad
-	 * @param[in] mediaType MediaType of data
-	 * @param[in] ptr Data buffer
-	 * @param[in] len0 Size of data buffer
-	 * @param[in] fpts PTS of buffer in seconds
-	 * @param[in] fdts DTS of buffer in seconds
-	 * @param[in] fDuration Duration of buffer in seconds
+	 * @brief inject HLS/ts elementary stream buffer to gstreamer pipeline
+	 * @param[in] mediaType stream type
+	 * @param[in] ptr buffer pointer
+	 * @param[in] len0 length of buffer
+	 * @param[in] fpts PTS of buffer (in sec)
+	 * @param[in] fdts DTS of buffer (in sec)
+	 * @param[in] fDuration duration of buffer (in sec)
 	 * @note Caller owns ptr, may free on return
 	 */
-	void Send(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
+	void SendCopy(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
-		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, len0 %lu, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, len0, fpts, fdts, fDuration);
-		gboolean discontinuity = FALSE;
-
-#ifdef AAMP_DISCARD_AUDIO_TRACK
-		if (mediaType == eMEDIATYPE_AUDIO)
-		{
-			GST_WARNING_OBJECT(aamp, "Discard audio track- not sending data\n");
-			return;
-		}
-#endif
-
-		const char* mediaTypeStr = (mediaType==eMEDIATYPE_AUDIO)?"eMEDIATYPE_AUDIO":"eMEDIATYPE_VIDEO";
-		GST_DEBUG_OBJECT(aamp, "Enter len = %d fpts %f mediaType %s", (int)len0, fpts, mediaTypeStr);
-		if (!readyToSend)
-		{
-			if (!gst_aamp_ready(aamp))
-			{
-				GST_WARNING_OBJECT(aamp, "Not ready to consume data type %s\n", mediaTypeStr);
-				return;
-			}
-			readyToSend = true;
-		}
-		media_stream* stream = &aamp->stream[mediaType];
-
-		if (stream->isPaused)
-		{
-			for (int i = 0; i < STREAM_COUNT; i++)
-				aamp->stream[i].isPaused = TRUE;
-		}
-
-		if (stream->resetPosition && aamp->player_aamp->aamp->seek_pos_seconds > 0)
-		{
-			aamp->spts = aamp->player_aamp->aamp->seek_pos_seconds;
-			GST_DEBUG_OBJECT(aamp, "Updating spts %f mediaType %s", aamp->spts, mediaTypeStr);
-		}
-
-		if (aamp->spts > 0)
-		{
-			fpts += aamp->spts;
-		}
-
-		GST_TRACE_OBJECT(aamp, "Enter Send mediaType %d, Updated fpts %lf\n", mediaType, fpts);
-		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
-		GstClockTime dts = (GstClockTime)(fdts * GST_SECOND);
-//#define TRACE_PTS_TRACK 0xff
-#ifdef TRACE_PTS_TRACK
-		if (( mediaType == TRACE_PTS_TRACK ) || (0xFF == TRACE_PTS_TRACK))
-		{
-			printf("%s : fpts %f pts %llu", (mediaType == eMEDIATYPE_VIDEO)?"vid":"aud", fpts, (unsigned long long)pts);
-			GstClock *clock = GST_ELEMENT_CLOCK(aamp);
-			if (clock)
-			{
-				GstClockTime curr = gst_clock_get_time(clock);
-				printf(" provided clock time %lu diff (pts - curr) %lu (%lu ms)", (unsigned long)curr, (unsigned long)(pts-curr), (unsigned long)(pts-curr)/GST_MSECOND);
-			}
-			printf("\n");
-		}
-#endif
-
-		if(stream->eventsPending)
-		{
-			SendPendingEvents(stream , pts);
-			discontinuity = TRUE;
-
-		}
-#ifdef GSTAAMP_DUMP_STREAM
-		static FILE* fp[2] = {NULL,NULL};
-		static char filename[128];
-		if (!fp[mediaType])
-		{
-			sprintf(filename, "gstaampdump%d.ts",mediaType );
-			fp[mediaType] = fopen(filename, "w");
-		}
-		fwrite(ptr, 1, len0, fp[mediaType] );
-#endif
-
-		while (aamp->player_aamp->aamp->DownloadsAreEnabled() && !stream->isPaused && stream->srcpad)
-		{
-			size_t len = len0;
-			if (len > MAX_BYTES_TO_SEND)
-			{
-				len = MAX_BYTES_TO_SEND;
-			}
-#ifdef USE_GST1
-			GstBuffer *buffer = gst_buffer_new_allocate(NULL, (gsize) len, NULL);
-			GstMapInfo map;
-			gst_buffer_map(buffer, &map, GST_MAP_WRITE);
-			memcpy(map.data, ptr, len);
-			gst_buffer_unmap(buffer, &map);
-			GST_BUFFER_PTS(buffer) = pts;
-			GST_BUFFER_DTS(buffer) = dts;
-#else
-			GstBuffer *buffer = gst_buffer_new_and_alloc((guint) len);
-			memcpy(GST_BUFFER_DATA(buffer), ptr, len);
-			GST_BUFFER_TIMESTAMP(buffer) = pts;
-#endif
-			if (discontinuity)
-			{
-				GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_DISCONT);
-				discontinuity = FALSE;
-			}
-
-			gst_aamp_stream_add_item( stream, buffer);
-			ptr = len + (unsigned char *) ptr;
-			len0 -= len;
-			if (len0 == 0)
-			{
-				break;
-			}
-		}
-		GST_TRACE_OBJECT(aamp, "Exit");
+		SendHelper(mediaType, ptr, len0, fpts, fdts, fDuration, true /*copy*/);
 	}
-
 
 	/**
-	 * @brief Sends stream data to src pad
-	 * @param[in] mediaType MediaType of data
-	 * @param[in] pBuffer Data buffer
-	 * @param[in] fpts PTS of buffer in seconds
-	 * @param[in] fdts DTS of buffer in seconds
-	 * @param[in] fDuration Duration of buffer in seconds
+	 * @brief inject mp4 segment to gstreamer pipeline
+	 * @param[in] mediaType stream type
+	 * @param[in] pBuffer buffer as GrowableBuffer pointer
+	 * @param[in] fpts PTS of buffer (in sec)
+	 * @param[in] fdts DTS of buffer (in sec)
+	 * @param[in] fDuration duration of buffer (in sec)
 	 * @note Ownership of pBuffer is transferred
 	 */
-	void Send(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration)
+	void SendTransfer(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration)
 	{
-		GST_DEBUG_OBJECT(aamp, "Enter Send mediaType %d, fpts %lf, fdts %lf, fDuration %lf\n", mediaType, fpts, fdts, fDuration);
-		gboolean discontinuity = FALSE;
+		SendHelper(mediaType, pBuffer->ptr, pBuffer->len, fpts, fdts, fDuration, false /*transfer*/);
 
-#ifdef AAMP_DISCARD_AUDIO_TRACK
-		if (mediaType == eMEDIATYPE_AUDIO)
-		{
-			GST_WARNING_OBJECT(aamp, "Discard audio track- not sending data\n");
-			return;
-		}
-#endif
-
-		const char* mediaTypeStr = (mediaType == eMEDIATYPE_AUDIO) ? "eMEDIATYPE_AUDIO" : "eMEDIATYPE_VIDEO";
-		GST_INFO_OBJECT(aamp, "Enter len = %d fpts %f mediaType %s", (int) pBuffer->len, fpts, mediaTypeStr);
-		if (!readyToSend)
-		{
-			if (!gst_aamp_ready(aamp))
-			{
-				GST_WARNING_OBJECT(aamp, "Not ready to consume data type %s\n", mediaTypeStr);
-				return;
-			}
-			readyToSend = true;
-		}
-		media_stream* stream = &aamp->stream[mediaType];
-		if (!stream->srcpad)
-		{
-			GST_WARNING_OBJECT(aamp, "Pad NULL mediaType: %s (%d)  len = %d fpts %f\n", mediaTypeStr, mediaType,
-			        (int) pBuffer->len, fpts);
-			return;
-		}
-
-		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
-		GstClockTime dts = (GstClockTime)(fdts * GST_SECOND);
-//#define TRACE_PTS_TRACK 0xff
-#ifdef TRACE_PTS_TRACK
-		if (( mediaType == TRACE_PTS_TRACK ) || (0xFF == TRACE_PTS_TRACK))
-		{
-			printf("%s : fpts %f pts %llu", (mediaType == eMEDIATYPE_VIDEO)?"vid":"aud", fpts, (unsigned long long)pts);
-			GstClock *clock = GST_ELEMENT_CLOCK(aamp);
-			if (clock)
-			{
-				GstClockTime curr = gst_clock_get_time(clock);
-				printf(" provided clock time %lu diff (pts - curr) %lu (%lu ms)", (unsigned long)curr, (unsigned long)(pts-curr), (unsigned long)(pts-curr)/GST_MSECOND);
-			}
-			printf("\n");
-		}
-#endif
-
-		if (stream->eventsPending)
-		{
-			SendPendingEvents(stream, pts);
-			discontinuity = TRUE;
-		}
-#ifdef GSTAAMP_DUMP_STREAM
-		static FILE* fp[2] =
-		{	NULL,NULL};
-		static char filename[128];
-		if (!fp[mediaType])
-		{
-			sprintf(filename, "gstaampdump%d.ts",mediaType );
-			fp[mediaType] = fopen(filename, "w");
-		}
-		fwrite(buffer->ptr, 1, buffer->len, fp[mediaType] );
-#endif
-
-		if (aamp->player_aamp->aamp->DownloadsAreEnabled())
-		{
-#ifdef USE_GST1
-			GstBuffer* buffer = gst_buffer_new_wrapped (pBuffer->ptr ,pBuffer->len);
-			GST_BUFFER_PTS(buffer) = pts;
-			GST_BUFFER_DTS(buffer) = dts;
-#else
-			GstBuffer* buffer = gst_buffer_new();
-			GST_BUFFER_SIZE(buffer) = pBuffer->len;
-			GST_BUFFER_MALLOCDATA(buffer) = pBuffer->ptr;
-			GST_BUFFER_DATA (buffer) = GST_BUFFER_MALLOCDATA(buffer)
-			GST_BUFFER_TIMESTAMP(buffer) = pts;
-			GST_BUFFER_DURATION(buffer) = duration;
-#endif
-			if (discontinuity)
-			{
-				GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_DISCONT);
-				discontinuity = FALSE;
-			}
-			gst_aamp_stream_add_item( stream, buffer);
-		}
-		/*Since ownership of buffer is given to gstreamer, reset pBuffer */
+		/*Since ownership of buffer is given to gstreamer, reset pBuffer*/
 		memset(pBuffer, 0x00, sizeof(GrowableBuffer));
-		GST_TRACE_OBJECT(aamp, "Exit");
 	}
-
 
 	/**
 	 * @brief Updates internal rate
