@@ -350,8 +350,10 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
 
         gst_aampcdmicapsappendifnotduplicate(transformedCaps, out);
 
+#if defined(AMLOGIC)
 	if (direction == GST_PAD_SINK && !gst_caps_is_empty(transformedCaps) && OCDMGstTransformCaps)
 		OCDMGstTransformCaps(&transformedCaps);
+#endif
     }
 
     if (filter)
@@ -420,7 +422,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
     {
         GST_DEBUG_OBJECT(aampcdmidecryptor,
                 "Failed to get GstProtection metadata from buffer %p, could be clear buffer",buffer);
-
+#if defined(AMLOGIC)
         // call decrypt even for clear samples in order to copy it to a secure buffer. If secure buffers are not supported
         // decrypt() call will return without doing anything
 	if (aampcdmidecryptor->drmSession != NULL)
@@ -430,6 +432,7 @@ static GstFlowReturn gst_aampcdmidecryptor_transform_ip(
 		result = GST_FLOW_NOT_SUPPORTED;
 		GST_DEBUG_OBJECT(aampcdmidecryptor, "drmSession is **** NULL ****, returning GST_FLOW_NOT_SUPPORTED");
 	}
+#endif
         goto free_resources;
     }
 
