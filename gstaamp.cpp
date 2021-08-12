@@ -338,7 +338,7 @@ public:
 	 * @param[in] bESChangeStatus - To force configure the pipeline when audio codec changed (used for DASH)
 	 * @param[in] forwardAudioToAux if audio buffers to be forwarded to aux pipeline
 	 */
-	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, StreamOutputFormat auxFormat, bool bESChangeStatus, bool forwardAudioToAux, bool /*setReadyAfterPipelineCreation*/)
+	void Configure(StreamOutputFormat format, StreamOutputFormat audioFormat, StreamOutputFormat auxFormat, bool bESChangeStatus, bool forwardAudioToAux)
 	{
 		GST_INFO_OBJECT(aamp, "Enter Configure() format = %d audioFormat = %d, auxFormat = %d, bESChangeStatus %d, forwardAudioToAux %d",
 					format, audioFormat, auxFormat, bESChangeStatus, forwardAudioToAux);
