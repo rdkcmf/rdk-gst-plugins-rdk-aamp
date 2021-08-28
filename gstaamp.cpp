@@ -38,12 +38,6 @@
 GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
 #define GST_CAT_DEFAULT gst_aamp_debug_category
 
-<<<<<<< HEAD   (886f6c RDK-27796: Split Audio Output (Dual Decode) via Onboard Blue)
-#define MAX_BYTES_TO_SEND (188*1024)
-/* XIONE-1190- Dms Redbull channel not played mostly.
- * This issue is due to injection get blocked as queue
- * get filled and not consumed by consumer.
-=======
 
 /* XIONE-1190- Dms Redbull Linear channel and Redbull Events are not played
  *
@@ -63,7 +57,6 @@ GST_DEBUG_CATEGORY_STATIC (gst_aamp_debug_category);
  * When we try to remove this Buffer size condition check, memory leak happened,
  * due to all the packets get added in the queue without any max threshold value.
  *
->>>>>>> CHANGE (0c1654 DELIA-51547 gstaamp.cpp refactoring - distinct naming and sh)
  * Temporary Fix
  * If we increase the size of queue to 50 from 30
  * then this issue is not observed
