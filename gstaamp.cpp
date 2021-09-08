@@ -383,6 +383,7 @@ private:
 				if (aamp->spts > 0)
 				{
 					fpts += aamp->spts;
+					fdts += aamp->spts;
 				}
 
 				GST_TRACE_OBJECT(aamp, "%s:%d MediaType(%d) Updated fpts(%lf)\n", __FUNCTION__, __LINE__, mediaType, fpts);
