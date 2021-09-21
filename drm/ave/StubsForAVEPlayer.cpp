@@ -78,6 +78,7 @@ void JSStringCreateWithCharacters(){ }
 void JSObjectMakeDate(){ }
 void JSObjectMakeError(){ }
 void JSObjectDeleteProperty(){ }
+void JSValueCreateJSONString(){ }
 }
 #endif
 #ifndef REALTEKCE
