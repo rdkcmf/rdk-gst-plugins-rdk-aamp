@@ -380,14 +380,7 @@ private:
 					GST_DEBUG_OBJECT(aamp, "%s:%d Updating spts(%f) mediaType(%s)", __FUNCTION__, __LINE__, aamp->spts, mediaTypeStr);
 				}
 
-				/* In the HLS file, if the stream is not muxed, then aamp itself
-                                 * is correcting the position value after seek.
-                                 * Which is reflecting in the PTS and DTS values.
-                                 * So no need to update the seek position, after audio and video
-                                 * packets are injected from the seeked position.
-                                 * For streams which are not muxed content.
-                                 */
-                                if ( (aamp->spts > 0) && (aamp->enable_src_tasks == TRUE) )
+				if (aamp->spts > 0)
 				{
 					fpts += aamp->spts;
 					fdts += aamp->spts;
