@@ -114,6 +114,7 @@ struct _GstAamp
 	gboolean report_tune;
 	gboolean enable_src_tasks;
 	gboolean flushing;
+	gboolean isSkipSeekPosUpdate;
 
 	guint decoder_idle_id;
 	gboolean report_decode_handle;
