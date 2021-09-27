@@ -379,7 +379,7 @@ private:
 					GST_DEBUG_OBJECT(aamp, "%s:%d Updating spts(%f) mediaType(%s)", __FUNCTION__, __LINE__, aamp->spts, mediaTypeStr);
 				}
 
-				if (aamp->spts > 0)
+				if (aamp->spts > 0 && !aamp->isSkipSeekPosUpdate)
 				{
 					fpts += aamp->spts;
 					fdts += aamp->spts;
@@ -880,6 +880,9 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 		return;
 	}
 	g_mutex_unlock (&aamp->mutex);
+
+	aamp->isSkipSeekPosUpdate = FALSE;
+
 	if (aamp->player_aamp->aamp->IsMuxedStream())
 	{
 		GST_INFO_OBJECT(aamp, "Muxed stream, enable src pad tasks");
@@ -889,6 +892,12 @@ static void gst_aamp_configure(GstAamp * aamp, StreamOutputFormat format, Stream
 	{
 		GST_INFO_OBJECT(aamp, "de-muxed stream, do not enable src pad tasks");
 		aamp->enable_src_tasks = FALSE;
+
+		if( aamp->player_aamp->aamp->IsAudioPlayContextCreationSkipped() )
+		{
+			aamp->isSkipSeekPosUpdate = TRUE;
+			GST_INFO_OBJECT(aamp, "de-muxed stream and audio playcontext creation skipped, so seek pos should not update to the pts values");
+		}
 	}
 
 	caps = GetGstCaps(format);
