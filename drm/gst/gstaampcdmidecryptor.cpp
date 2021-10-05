@@ -27,6 +27,9 @@
 #include "gstaampcdmidecryptor.h"
 #include <open_cdm.h>
 #include <open_cdm_adapter.h>
+#if defined(AMLOGIC)
+#include <gst_svp_meta.h>
+#endif
 #include <dlfcn.h>
 
 #ifndef USE_OPENCDM_ADAPTER
@@ -159,6 +162,7 @@ static void gst_aampcdmidecryptor_init(
     aampcdmidecryptor->streamEncryped = false;
     aampcdmidecryptor->ignoreSVP = false;
     aampcdmidecryptor->sinkCaps = NULL;
+    aampcdmidecryptor->svpCtx = NULL;
 
     OCDMGstTransformCaps = (OpenCDMError(*)(GstCaps**))dlsym(RTLD_DEFAULT, ocdmgsttransformcaps);
     if (OCDMGstTransformCaps)
@@ -1392,6 +1396,20 @@ static GstStateChangeReturn gst_aampcdmidecryptor_changestate(
         g_cond_signal(&aampcdmidecryptor->condition);
         g_mutex_unlock(&aampcdmidecryptor->mutex);
         break;
+#if defined(AMLOGIC)
+    case GST_STATE_CHANGE_NULL_TO_READY:
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "NULL->READY");
+        if (aampcdmidecryptor->svpCtx == NULL)
+          gst_svp_ext_get_context(&aampcdmidecryptor->svpCtx, Server, 0);
+        break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+        GST_DEBUG_OBJECT(aampcdmidecryptor, "READY->NULL");
+        if (aampcdmidecryptor->svpCtx) {
+            gst_svp_ext_free_context(aampcdmidecryptor->svpCtx);
+            aampcdmidecryptor->svpCtx = NULL;
+        }
+        break;
+#endif
     default:
         break;
     }
