@@ -1459,7 +1459,7 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
 			gst_query_parse_duration (query, &format, NULL);
 			if (format == GST_FORMAT_TIME)
 			{
-				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
+				gint64 duration = aamp->player_aamp->aamp->DurationFromStartOfPlaybackMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
 				GST_TRACE_OBJECT(aamp, "GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
 				ret = TRUE;
@@ -1606,7 +1606,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 			gst_query_parse_duration (query, &format, NULL);
 			if (format == GST_FORMAT_TIME)
 			{
-				gint64 duration = aamp->player_aamp->aamp->GetDurationMs()*GST_MSECOND;
+				gint64 duration = aamp->player_aamp->aamp->DurationFromStartOfPlaybackMs()*GST_MSECOND;
 				gst_query_set_duration (query, format, duration);
 				GST_TRACE_OBJECT(aamp, " GST_QUERY_DURATION returning duration %" G_GUINT64_FORMAT "\n", duration);
 				ret = TRUE;
