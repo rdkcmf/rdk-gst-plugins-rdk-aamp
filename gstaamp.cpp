@@ -525,11 +525,7 @@ public:
 			gst_aamp_stream_add_item(stream, gst_event_new_flush_start());
 			stream->isPaused=TRUE;
 
-#ifdef USE_GST1
 			GstEvent* event = gst_event_new_flush_stop(FALSE);
-#else
-			GstEvent* event = gst_event_new_flush_stop();
-#endif
 			GST_INFO_OBJECT(aamp, "%s: sending flush stop\n", __FUNCTION__);
 			gst_aamp_stream_add_item(stream, event);
 			stream->flush = FALSE;
@@ -537,7 +533,6 @@ public:
 		if (stream->resetPosition)
 		{
 			stream->isPaused=FALSE;
-#ifdef USE_GST1
 			GstSegment segment;
 			gst_segment_init(&segment, GST_FORMAT_TIME);
 			segment.start = pts;
@@ -546,9 +541,6 @@ public:
 			segment.applied_rate = rate;
 			GST_INFO_OBJECT(aamp, "Sending segment event. start %" G_GUINT64_FORMAT " stop %" G_GUINT64_FORMAT" rate %f\n", segment.start, segment.stop, segment.rate);
 			GstEvent* event = gst_event_new_segment (&segment);
-#else
-			GstEvent* event = gst_event_new_new_segment(FALSE, AAMP_NORMAL_PLAY_RATE, GST_FORMAT_TIME, pts, GST_CLOCK_TIME_NONE, 0);
-#endif
 			gst_aamp_stream_add_item(stream, event);
 			stream->resetPosition = FALSE;
 		}
@@ -676,11 +668,7 @@ public:
 		else
 		{
 			structure = gst_structure_new("get_video_handle", "video_handle", G_TYPE_POINTER, 0, NULL);
-#ifdef USE_GST1
 			query = gst_query_new_custom(GST_QUERY_CUSTOM, structure);
-#else
-			query = gst_query_new_application(GST_QUERY_CUSTOM, structure);
-#endif
 			ret = gst_pad_peer_query(aamp->stream[eMEDIATYPE_VIDEO].srcpad, query);
 			if (ret)
 			{
