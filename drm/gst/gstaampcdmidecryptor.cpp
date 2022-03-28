@@ -374,6 +374,7 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
     GST_LOG_OBJECT(trans, "returning %" GST_PTR_FORMAT, transformedCaps);
     if (direction == GST_PAD_SINK && !gst_caps_is_empty(transformedCaps))
     {
+        g_mutex_lock(&aampcdmidecryptor->mutex);
         // clean up previous caps
         if (aampcdmidecryptor->sinkCaps)
         {
@@ -381,6 +382,7 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
             aampcdmidecryptor->sinkCaps = NULL;
         }
         aampcdmidecryptor->sinkCaps = gst_caps_copy(transformedCaps);
+        g_mutex_unlock(&aampcdmidecryptor->mutex);
         GST_DEBUG_OBJECT(trans, "Set sinkCaps to %" GST_PTR_FORMAT, aampcdmidecryptor->sinkCaps);
     }
     return transformedCaps;
