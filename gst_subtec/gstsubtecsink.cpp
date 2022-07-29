@@ -208,6 +208,15 @@ gst_subtecsink_init (GstSubtecSink *subtecsink)
   
 }
 
+static void set_mute(GstSubtecSink *subtecsink)
+{
+  if (subtecsink->m_mute)
+    if (subtecsink->m_channel) subtecsink->m_channel->SendMutePacket(); else GST_WARNING_OBJECT (subtecsink, "Mute failed due to NULL channel");
+  else
+    if (subtecsink->m_channel) subtecsink->m_channel->SendUnmutePacket(); else GST_WARNING_OBJECT (subtecsink, "Unmute failed due to NULL channel");
+}
+
+
 void
 gst_subtecsink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
@@ -224,10 +233,7 @@ gst_subtecsink_set_property (GObject * object, guint property_id,
         
         //Pause senderthread
         subtecsink->m_mute = mute;
-        if (mute)
-	        if (subtecsink->m_channel) subtecsink->m_channel->SendMutePacket(); else GST_WARNING_OBJECT (subtecsink, "Mute failed due to NULL channel");
-        else
-	        if (subtecsink->m_channel) subtecsink->m_channel->SendUnmutePacket(); else GST_WARNING_OBJECT (subtecsink, "Unmute failed due to NULL channel");
+        set_mute(subtecsink);
     }
       break;
     case PROP_NO_EOS:
@@ -321,6 +327,7 @@ gst_subtecsink_set_caps (GstBaseSink * sink, GstCaps * caps)
 
 	subtecsink->m_channel->SendResetAllPacket();
   subtecsink->m_channel->SendSelectionPacket(1920, 1080);
+  set_mute(subtecsink);
 
   return TRUE;
 }
@@ -422,6 +429,7 @@ gst_subtecsink_event (GstBaseSink * sink, GstEvent * event)
     case GST_EVENT_FLUSH_STOP:
       if (subtecsink->m_channel) subtecsink->m_channel->SendSelectionPacket(1920, 1080);
       subtecsink->m_send_timestamp = true;
+      set_mute(subtecsink);
       break;
     case GST_EVENT_SEGMENT:
     {
@@ -429,14 +437,6 @@ gst_subtecsink_event (GstBaseSink * sink, GstEvent * event)
       gst_event_parse_segment(event, &segment);
       subtecsink->m_segmentstart = segment->start;
       GST_DEBUG_OBJECT(subtecsink, "segment %" GST_SEGMENT_FORMAT, segment);
-      // auto timestampMs = get_timestamp_ms(sink, segment->start, 0);
-
-      // GST_DEBUG_OBJECT(subtecsink,
-      //                   "%s generating timestamp %u",
-      //                   __func__,
-      //                   static_cast<std::uint32_t>(timestampMs));
-
-      // subtecsink->m_channel->SendTimestampPacket((timestampMs));      
     }
       break;
     case GST_EVENT_EOS:
