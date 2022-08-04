@@ -43,6 +43,7 @@ struct _GstSubtecSink
   gboolean m_no_eos;
   gboolean m_send_timestamp{true};
   guint64  m_segmentstart{0};
+  guint64  m_pts_offset{0};
   std::string   m_subtec_socket{};
 };
 
