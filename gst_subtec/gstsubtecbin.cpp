@@ -60,7 +60,8 @@ enum
   PROP_NO_EOS,
   PROP_ASYNC,
   PROP_SYNC,
-  PROP_SUBTEC_SOCKET
+  PROP_SUBTEC_SOCKET,
+  PROP_PTS_OFFSET
 };
 
 static void
@@ -112,6 +113,12 @@ gst_subtecbin_class_init (GstSubtecBinClass * klass)
                                   NULL,
                                   (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+    g_object_class_install_property(gobject_class,
+                                  PROP_PTS_OFFSET,
+                                  g_param_spec_uint64("pts-offset", "PTS offset", "PTS offset for mpeg-2 ts HLS streams",
+                                  0, G_MAXUINT64, 0,
+                                  (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   gobject_class->dispose = gst_subtecbin_dispose;
   gobject_class->finalize = gst_subtecbin_finalize;
 }
@@ -149,6 +156,13 @@ static void gst_subtecbin_set_property (GObject * object, guint prop_id,
         g_object_set_property(G_OBJECT(subtecbin->sink), "subtec-socket", value);
       subtecbin->subtec_socket = g_value_get_string(value);
       break;
+    case PROP_PTS_OFFSET:
+    {
+      if (subtecbin->sink)
+        g_object_set_property(G_OBJECT(subtecbin->sink), "pts-offset", value);
+      subtecbin->pts_offset = g_value_get_uint64(value);
+    }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -178,6 +192,9 @@ gst_subtecbin_get_property (GObject * object, guint property_id,
       break;
     case PROP_SUBTEC_SOCKET:
       g_value_set_string(value, subtecbin->subtec_socket.c_str());
+      break;
+    case PROP_PTS_OFFSET:
+      g_value_set_uint64(value, subtecbin->pts_offset);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);

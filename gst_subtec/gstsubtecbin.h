@@ -51,6 +51,7 @@ struct _GstSubtecBin
   bool        async = true;
   bool        sync = true;
   std::string subtec_socket{};
+  guint64     pts_offset{0};
 };
 
 struct _GstSubtecBinClass

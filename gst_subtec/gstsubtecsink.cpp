@@ -57,7 +57,8 @@ enum
   PROP_0,
   PROP_MUTE,
   PROP_NO_EOS,
-  PROP_SUBTEC_SOCKET
+  PROP_SUBTEC_SOCKET,
+  PROP_PTS_OFFSET
 };
 
 static GstStaticPadTemplate gst_subtecsink_sink_template =
@@ -112,6 +113,12 @@ gst_subtecsink_class_init (GstSubtecSinkClass * klass)
                                   PROP_SUBTEC_SOCKET,
                                   g_param_spec_string("subtec-socket", "Subtec socket", "Alternative subtec socket (default /var/run/subttx/pes_data_main)",
                                   NULL,
+                                  (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property(gobject_class,
+                                  PROP_PTS_OFFSET,
+                                  g_param_spec_uint64("pts-offset", "PTS offset", "PTS offset for mpeg-2 ts HLS streams",
+                                  0, G_MAXUINT64, 0,
                                   (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   base_sink_class->set_caps = GST_DEBUG_FUNCPTR (gst_subtecsink_set_caps);
@@ -250,6 +257,14 @@ gst_subtecsink_set_property (GObject * object, guint property_id,
       subtecsink->m_subtec_socket = subtec_socket;
     }
       break;
+    case PROP_PTS_OFFSET:
+    {
+      auto pts_offset = g_value_get_uint64(value);
+      GST_TRACE_OBJECT(subtecsink, "%s setting pts_offset to %lu", __func__, pts_offset);
+      subtecsink->m_pts_offset = pts_offset;
+      subtecsink->m_send_timestamp = true;
+    }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -273,6 +288,9 @@ gst_subtecsink_get_property (GObject * object, guint property_id,
       break;
     case PROP_SUBTEC_SOCKET:
       g_value_set_string (value, subtecsink->m_subtec_socket.c_str());
+      break;
+    case PROP_PTS_OFFSET:
+      g_value_set_uint64 (value, subtecsink->m_pts_offset);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -493,7 +511,7 @@ gst_subtecsink_render (GstBaseSink * sink, GstBuffer * buffer)
     if (subtecsink->m_send_timestamp)
     {
       //On seek, segment "time" will be ahead of buffer PTS - otherwise just use PTS
-      auto timestampMs = get_timestamp_ms(sink, subtecsink->m_segmentstart, 0);
+      auto timestampMs = get_timestamp_ms(sink, subtecsink->m_segmentstart, subtecsink->m_pts_offset);
 
       GST_DEBUG_OBJECT(subtecsink,
                         "%s generating timestamp %u",
