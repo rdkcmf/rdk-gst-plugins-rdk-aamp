@@ -253,6 +253,10 @@ gst_aampcdmidecryptor_transform_caps(GstBaseTransform * trans,
                  aampcdmidecryptor->selectedProtection = CLEARKEY_PROTECTION_SYSTEM_ID;
                  aampcdmidecryptor->ignoreSVP = true;
             }
+            else if(!g_strcmp0(capsinfo, VERIMATRIX_PROTECTION_SYSTEM_ID))
+            {
+                aampcdmidecryptor->selectedProtection = VERIMATRIX_PROTECTION_SYSTEM_ID;
+            }
         }
         else
         {

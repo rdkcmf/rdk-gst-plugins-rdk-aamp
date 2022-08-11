@@ -75,7 +75,7 @@ endif()
 set(GSTAAMP_SOURCES gstaamp.cpp gstaampsrc.cpp gstaampinit.cpp)
 if(CMAKE_CDM_DRM)
         message("CMAKE_CDM_DRM set")
-	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp drm/gst/gstaampclearkeydecryptor.cpp)
+	set(GSTAAMP_SOURCES "${GSTAAMP_SOURCES}" drm/gst/gstaampcdmidecryptor.cpp drm/gst/gstaampplayreadydecryptor.cpp drm/gst/gstaampwidevinedecryptor.cpp drm/gst/gstaampclearkeydecryptor.cpp drm/gst/gstaampverimatrixdecryptor.cpp)
 endif()
 
 if (CMAKE_GST_SUBTEC_ENABLED)

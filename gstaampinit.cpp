@@ -33,6 +33,7 @@
 #include "gstaampplayreadydecryptor.h"
 #include "gstaampwidevinedecryptor.h"
 #include "gstaampclearkeydecryptor.h"
+#include "gstaampverimatrixdecryptor.h"
 #endif
 
 
@@ -80,6 +81,16 @@ static gboolean plugin_init(GstPlugin * plugin)
 		else
 		{
 			logprintf("aamp plugin_init FAILED to register %s element\n", GstPluginNameCK);
+		}
+		ret = gst_element_register(plugin, GstPluginNameVMX,
+				GST_RANK_PRIMARY, GST_TYPE_AAMPVERIMATRIXDECRYPTOR );
+		if(ret)
+		{
+			logprintf("aamp plugin_init registered %s element\n", GstPluginNameVMX);
+		}
+		else
+		{
+			logprintf("aamp plugin_init FAILED to register %s element\n", GstPluginNameVMX);
 		}
 	}
 #endif
