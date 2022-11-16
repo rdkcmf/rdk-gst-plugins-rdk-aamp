@@ -571,7 +571,7 @@ public:
 	 * @param[in] initFragment flag to indicate init header
 	 * @note Ownership of pBuffer is transferred
 	 */
-	void SendTransfer(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration, bool initFragment = false)
+	void SendTransfer(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration, bool initFragment = false,bool isLowLatencyMode=0 )
 	{
 		SendHelper(mediaType, pBuffer->ptr, pBuffer->len, fpts, fdts, fDuration, false /*transfer*/);
 
