@@ -1492,10 +1492,8 @@ static gboolean gst_aamp_query(GstElement * element, GstQuery * query)
  */
 static GstFlowReturn gst_aamp_sink_chain(GstPad * pad, GstObject *parent, GstBuffer * buffer)
 {
-	GstAamp *aamp;
+	GstAamp *aamp = GST_AAMP(parent);
 	GST_DEBUG_OBJECT(aamp, "Enter gst_aamp_sink_chain");
-
-	aamp = GST_AAMP(parent);
 	GST_DEBUG_OBJECT(aamp, "chain");
 	gst_buffer_unref(buffer);
 	return GST_FLOW_OK;
@@ -1556,7 +1554,7 @@ static gboolean gst_aamp_src_query(GstPad * pad, GstObject *parent, GstQuery * q
 	{
 		case GST_QUERY_CAPS:
 		{
-			GstCaps* caps;
+			GstCaps* caps = NULL;
 			if(aamp->stream[eMEDIATYPE_VIDEO].srcpad == pad )
 			{
 				caps = aamp->stream[eMEDIATYPE_VIDEO].caps;
