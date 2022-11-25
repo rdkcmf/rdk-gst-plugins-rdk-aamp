@@ -38,6 +38,8 @@
 #include <tuple>
 #include <vector>
 
+namespace { constexpr auto XmlStart = "<?xml"; }
+
 GST_DEBUG_CATEGORY_STATIC (gst_vipertransform_debug_category);
 #define GST_CAT_DEFAULT gst_vipertransform_debug_category
 
@@ -296,14 +298,64 @@ static bool find_offset_ms_from_pts(const std::string &ttml, GstBuffer *buf, gin
 static bool is_harmonic_uhd(GstViperTransform *vipertransform, const std::string &ttml)
 {
   // Check for more than one <?xml> element (Harmonic UHD case)
-  const char *xml_marker = "<?xml";
+  const char *xml_marker = XmlStart;
   auto first_marker = ttml.find(xml_marker);
   auto second_marker = ttml.find(xml_marker, first_marker+1);
 
   return (second_marker != std::string::npos);
 }
 
+/**
+ * @brief Split Harmonic muxed buffers into a string vector
+ * In the case of Harmonic linear content, the TTML docs are concatenated in a single segment
+ * The timestamps are referenced to the start of the TTML doc, so the structure will be as follows:
+ * <?xml ...>    <------First TTML doc
+ * <tt ...>
+ * <head>...</head>
+ * <body>
+ *   <p begin="00:00:00.000" end="00:00:01.000">
+ *     <span...>Text from 0s - 1s</span>
+ *   </p>
+ * </body>
+ * </tt>
+ * <?xml ...>    <------Second TTML doc
+ * <tt ...>
+ * <head>...</head>
+ * <body>
+ *   <p begin="00:00:00.000" end="00:00:01.000">
+ *     <span...>Text from 1s - 2s</span>
+ *   </p>
+ * </body>
+ * </tt>
+ * 
+ * @param vipertransform 
+ * @param ttml 
+ * @return true 
+ * @return false 
+ */
+static std::vector<std::string> split_buffer(const std::string &ttml)
+{
+  std::vector<std::string> ttml_vec;
+  std::size_t pos=0, start_pos=0, end_pos = 0;
 
+  while ((start_pos = ttml.find(XmlStart, pos)) != std::string::npos)
+  {
+    end_pos = ttml.find(XmlStart, start_pos+1);
+    auto sub = ttml.substr(start_pos, end_pos);
+    
+    ttml_vec.emplace_back(std::move(sub));
+    pos = end_pos;
+  }
+
+  return ttml_vec;
+}
+
+/**
+ * @brief Check if the incoming content needs an offset. If so, parse it from the TTML
+ * 
+ * @param GstBaseTransform *trans 
+ * @param GstBuffer *buf 
+ */
 static void gst_vipertransform_before_transform (GstBaseTransform * trans,
     GstBuffer * buf)
 {
@@ -323,23 +375,31 @@ static void gst_vipertransform_before_transform (GstBaseTransform * trans,
     return;
   }
 
-  GstMapInfo map;
-  if (!gst_buffer_map(buf, &map, (GstMapFlags)GST_MAP_READ))
+  //Parse TTML string from buffer
+  std::string ttml;
   {
-    GST_ERROR_OBJECT (vipertransform, "Could not open for reading");
-    return;
-  }
-  const std::string ttml(reinterpret_cast<const char*>(map.data), map.size);
-  gst_buffer_unmap(buf, &map);
-
-  GST_DEBUG_OBJECT (vipertransform, "map.size %lu", map.size);
-
-  if (ViperContentType::UNKNOWN == vipertransform->m_content_type)
-  {
-    if (is_harmonic_uhd(vipertransform, ttml))
+    GstMapInfo inmap;
+    if (gst_buffer_map(buf, &inmap, (GstMapFlags)GST_MAP_READ))
     {
-      vipertransform->m_content_type = ViperContentType::HARMONIC_UHD;
+      GST_DEBUG_OBJECT (vipertransform, "map.size %lu", inmap.size);
+      ttml.assign(reinterpret_cast<const char*>(inmap.data), inmap.size);
+      gst_buffer_unmap(buf, &inmap);
+    }
+    else
+    {
+      GST_ERROR_OBJECT (vipertransform, "Could not open for reading");
       return;
+    }
+  }
+
+  //If there is more than one segment in the buffer, just take the first one
+  if (is_harmonic_uhd(vipertransform, ttml))
+  {
+    auto ttml_vec = split_buffer(ttml);
+    if (!ttml_vec.empty())
+    {
+      ttml = ttml_vec.front();
+      GST_DEBUG_OBJECT (vipertransform, "uhd[0] %s", ttml.c_str());
     }
   }
 
@@ -347,20 +407,20 @@ static void gst_vipertransform_before_transform (GstBaseTransform * trans,
   //Find the gap between the PTS and the first "begin" tag
   if (findFirstBegin(ttml, first_begin_ms))
   {
-    gint64 offset_ms = first_begin_ms - (GST_BUFFER_PTS(buf) / GST_MSECOND);
+    gint64 offset_from_pts_ms = first_begin_ms - (GST_BUFFER_PTS(buf) / GST_MSECOND);
 
-    GST_DEBUG_OBJECT(vipertransform, "offset_ms %" G_GINT64_FORMAT " buf duration %" G_GINT64_FORMAT " lbo %" G_GINT64_FORMAT " ", 
-                offset_ms, GST_BUFFER_DURATION(buf) / GST_MSECOND, vipertransform->m_linear_begin_offset);
+    GST_DEBUG_OBJECT(vipertransform, "offset_from_pts_ms %" G_GINT64_FORMAT " buf duration %" G_GINT64_FORMAT " lbo %" G_GINT64_FORMAT " ", 
+                offset_from_pts_ms, GST_BUFFER_DURATION(buf) / GST_MSECOND, vipertransform->m_linear_begin_offset);
 
     if (ViperContentType::UNKNOWN == vipertransform->m_content_type)
     {
       //If first cue time does not line up with PTS, this is linear content and needs an offset
-      if (std::abs(offset_ms) > GST_BUFFER_DURATION(buf) / GST_MSECOND)
+      if (std::abs(offset_from_pts_ms) > GST_BUFFER_DURATION(buf) / GST_MSECOND)
       {
         vipertransform->m_content_type = ViperContentType::LINEAR_OFFSET_PRELIM;
-        if (vipertransform->m_linear_begin_offset == 0 || abs(offset_ms) < vipertransform->m_linear_begin_offset)
+        if (vipertransform->m_linear_begin_offset == 0 || abs(offset_from_pts_ms) < vipertransform->m_linear_begin_offset)
         {
-          vipertransform->m_linear_begin_offset = offset_ms;
+          vipertransform->m_linear_begin_offset = offset_from_pts_ms;
         }
       }
       else
@@ -375,11 +435,11 @@ static void gst_vipertransform_before_transform (GstBaseTransform * trans,
     //If it's equal to the last, we're probably at the beginning of the segment so stick with this
     else if (ViperContentType::LINEAR_OFFSET_PRELIM == vipertransform->m_content_type)
     {
-      if (vipertransform->m_linear_begin_offset == 0 || abs(offset_ms) < vipertransform->m_linear_begin_offset)
+      if (vipertransform->m_linear_begin_offset == 0 || abs(offset_from_pts_ms) < vipertransform->m_linear_begin_offset)
       {
-        vipertransform->m_linear_begin_offset = offset_ms;
+        vipertransform->m_linear_begin_offset = offset_from_pts_ms;
       }
-      else if (offset_ms == vipertransform->m_linear_begin_offset)
+      else if (offset_from_pts_ms == vipertransform->m_linear_begin_offset)
       {
         vipertransform->m_content_type = ViperContentType::LINEAR_OFFSET;
       }
@@ -393,6 +453,15 @@ static void gst_vipertransform_before_transform (GstBaseTransform * trans,
   return;
 }
 
+/**
+ * @brief Add the offset to the GstBuffer if required. Also split the incoming buffer
+ * if needed for Harmonic content
+ * 
+ * @param trans 
+ * @param inbuf 
+ * @param outbuf 
+ * @return GstFlowReturn 
+ */
 static GstFlowReturn
 gst_vipertransform_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     GstBuffer * outbuf)
@@ -401,137 +470,96 @@ gst_vipertransform_transform (GstBaseTransform * trans, GstBuffer * inbuf,
 
   GST_DEBUG_OBJECT (vipertransform, "transform");
 
-  GstMapInfo inmap, outmap;
-  if (!gst_buffer_map(inbuf, &inmap, (GstMapFlags)GST_MAP_READ))
+  std::string ttml;
+
   {
-    GST_ERROR_OBJECT (vipertransform, "Could not open for reading");
-    return GST_FLOW_ERROR;
-  }
-  if (!gst_buffer_map(outbuf, &outmap, (GstMapFlags)GST_MAP_WRITE))
-  {
-    GST_ERROR_OBJECT (vipertransform, "Could not open for reading");
-    return GST_FLOW_ERROR;
-  }
-
-  switch (vipertransform->m_content_type)
-  {
-    //In the case of Harmonic linear content, the TTML docs are concatenated in a single segment
-    //The timestamps are referenced to the start of the TTML doc, so the structure will be as follows:
-    //<?xml ...>    <------First TTML doc
-    //<tt ...>
-    //<head>...</head>
-    //<body>
-    //  <p begin="00:00:00.000" end="00:00:01.000">
-    //    <span...>Text from 0s - 1s</span>
-    //  </p>
-    //</body>
-    //</tt>
-    //<?xml ...>    <------Second TTML doc
-    //<tt ...>
-    //<head>...</head>
-    //<body>
-    //  <p begin="00:00:00.000" end="00:00:01.000">
-    //    <span...>Text from 1s - 2s</span>
-    //  </p>
-    //</body>
-    //</tt>
-    //
-    //So these need to be split into separate segments and pushed with an offset to the sink
-    case ViperContentType::HARMONIC_UHD:
-      {
-        std::string ttml(reinterpret_cast<char *>(inmap.data), inmap.size);
-        std::size_t pos=0, start_pos=0, end_pos = 0, len=0;
-        std::vector<std::string> ttml_vec;
-
-        GST_DEBUG_OBJECT (vipertransform, "Harmonic transform");
-
-        //Split inbuf into a vector of xml docs
-        while ((start_pos = ttml.find("<?xml", pos)) != std::string::npos)
-        {
-          end_pos = ttml.find("<?xml", start_pos+1);
-          auto sub = ttml.substr(start_pos, end_pos);
-          GST_DEBUG_OBJECT (vipertransform, "start_pos %lu, end_pos %lu, sub %s", start_pos, end_pos, sub.c_str());
-          GST_DEBUG_OBJECT (vipertransform, "sub size %lu", sub.size());
-          
-          ttml_vec.emplace_back(std::move(sub));
-          pos = end_pos;
-          GST_DEBUG_OBJECT (vipertransform, "pos %lu", pos);
-        }
-
-        if (ttml_vec.empty())
-        {
-          GST_DEBUG_OBJECT (vipertransform, "vector empty - passing data straight through");
-          memcpy(outmap.data, inmap.data, inmap.size);
-          gst_buffer_unmap(outbuf, &outmap);
-          gst_buffer_unmap(inbuf, &inmap);
-
-          return GST_FLOW_OK;
-        }
-        
-        int segment_duration;
-        GstClockTime pts = GST_BUFFER_PTS(inbuf);
-
-        //Useful for debugging via filesrc (filesrc sets pts/dts/duration to -1)
-        if (static_cast<gint64>(GST_BUFFER_DURATION(inbuf)) == -1)
-        {
-          segment_duration = ttml_vec.size() * GST_SECOND;
-          pts = 0;
-        }
-        else
-          segment_duration = GST_BUFFER_DURATION(inbuf) / ttml_vec.size();
-
-        auto segment_count = 0;
-
-        //Split single, concatenated buffer into separate buffers
-        //Add an offset to the buffer object for use by the sink
-        //Then push them as new, separate buffers to the pipeline
-        for (const auto &item : ttml_vec)
-        {
-          GstBuffer *buf;
-          GstMemory *mem;
-
-          guint64 pts_ms = pts / GST_MSECOND;
-          guint64 duration_ms = segment_duration / GST_MSECOND;
-
-          gchar *data = (gchar *)g_malloc(item.size());
-          memcpy(data, item.c_str(), item.size());
-
-          buf = gst_buffer_new_wrapped(data, item.size());
-          //Retimestamp new buffer if required
-          GST_BUFFER_PTS(buf) = pts + ((segment_count * segment_duration));
-          GST_BUFFER_DTS(buf) = pts + ((segment_count * segment_duration));
-          GST_BUFFER_DURATION(buf) = segment_duration;
-          GST_BUFFER_OFFSET(buf) = 0 - (pts_ms + (duration_ms * segment_count));
-
-          GST_DEBUG_OBJECT (vipertransform, "pts_ms: %" G_GUINT64_FORMAT " duration_ms %" G_GUINT64_FORMAT " offset ms %" G_GUINT64_FORMAT " segment_count %d", pts_ms, duration_ms, GST_BUFFER_OFFSET(buf), segment_count);
-
-          gst_pad_push(gst_element_get_static_pad(&trans->element, "src"), buf);
-          segment_count++;
-        }
-
-        gst_buffer_unmap(outbuf, &outmap);
-        gst_buffer_unmap(inbuf, &inmap);
-
-        return GST_BASE_TRANSFORM_FLOW_DROPPED;
-      }
-    break;
-    //Linear offset is needed where the PTS does not line up with the timestamp in the TTML
-    //This is the case for Viper linear content, so we need to send an offset downstream to
-    //subtecsink
-    case ViperContentType::LINEAR_OFFSET:
-    case ViperContentType::LINEAR_OFFSET_PRELIM:
+    GstMapInfo inmap, outmap;
+    if (gst_buffer_map(inbuf, &inmap, (GstMapFlags)GST_MAP_READ) && gst_buffer_map(outbuf, &outmap, (GstMapFlags)GST_MAP_WRITE))
     {
-      GST_BUFFER_OFFSET(outbuf) = vipertransform->m_linear_begin_offset;
+      ttml.assign(reinterpret_cast<char *>(inmap.data), inmap.size);
+      memcpy(outmap.data, inmap.data, inmap.size);
+      gst_buffer_unmap(outbuf, &outmap);
+      gst_buffer_unmap(inbuf, &inmap);
     }
-      break;
-    default:
-      break;
+    else
+    {
+      GST_ERROR_OBJECT (vipertransform, "Could not map buffers");
+      return GST_FLOW_ERROR;
+    }
+  }
+
+
+  if (is_harmonic_uhd(vipertransform, ttml))
+  {
+    std::vector<std::string> ttml_vec;
+
+    GST_DEBUG_OBJECT (vipertransform, "Harmonic transform");
+
+    //Split inbuf into a vector of xml docs
+    ttml_vec = split_buffer(ttml);
+
+    if (ttml_vec.empty())
+    {
+      GST_DEBUG_OBJECT (vipertransform, "vector empty - passing data straight through");
+      return GST_FLOW_OK;
+    }
+    
+    int segment_duration;
+    GstClockTime pts = GST_BUFFER_PTS(inbuf);
+
+    //Useful for debugging via filesrc (filesrc sets pts/dts/duration to -1)
+    if (static_cast<gint64>(GST_BUFFER_DURATION(inbuf)) == -1)
+    {
+      segment_duration = ttml_vec.size() * GST_SECOND;
+      pts = 0;
+    }
+    else
+      segment_duration = GST_BUFFER_DURATION(inbuf) / ttml_vec.size();
+
+    auto segment_count = 0;
+
+    //Split single, concatenated buffer into separate buffers
+    //Add an offset to the buffer object for use by the sink
+    //Then push them as new, separate buffers to the pipeline
+    for (const auto &item : ttml_vec)
+    {
+      GstBuffer *buf;
+      GstMemory *mem;
+
+      guint64 pts_ms = pts / GST_MSECOND;
+      guint64 duration_ms = segment_duration / GST_MSECOND;
+
+      gchar *data = (gchar *)g_malloc(item.size());
+      memcpy(data, item.c_str(), item.size());
+
+      buf = gst_buffer_new_wrapped(data, item.size());
+      //Retimestamp new buffer if required
+      GST_BUFFER_PTS(buf) = pts + ((segment_count * segment_duration));
+      GST_BUFFER_DTS(buf) = pts + ((segment_count * segment_duration));
+      GST_BUFFER_DURATION(buf) = segment_duration;
+
+      //Incoming Harmonic content might be either
+      // a. TTML timetamped relative to the start of the fragment or
+      // b. MediaKind-style with TTML timestamp being absolute from some fairly arbitrary zero point
+      if (vipertransform->m_linear_begin_offset != 0)
+        GST_BUFFER_OFFSET(buf) = vipertransform->m_linear_begin_offset;
+      else
+        GST_BUFFER_OFFSET(buf) = 0 - (pts_ms + (duration_ms * segment_count));
+
+      GST_DEBUG_OBJECT (vipertransform, "pts_ms: %" G_GUINT64_FORMAT " duration_ms %" G_GUINT64_FORMAT " offset ms %" G_GUINT64_FORMAT " segment_count %d", pts_ms, duration_ms, GST_BUFFER_OFFSET(buf), segment_count);
+
+      //Push fragment as a separate GstBuffer
+      gst_pad_push(gst_element_get_static_pad(&trans->element, "src"), buf);
+      segment_count++;
+    }
+
+    return GST_BASE_TRANSFORM_FLOW_DROPPED;
+  }
+  else if (vipertransform->m_linear_begin_offset != 0)
+  {
+    GST_BUFFER_OFFSET(outbuf) = vipertransform->m_linear_begin_offset;
   }
   
-  memcpy(outmap.data, inmap.data, inmap.size);
-  gst_buffer_unmap(outbuf, &outmap);
-  gst_buffer_unmap(inbuf, &inmap);
-
   return GST_FLOW_OK;
 }
 
