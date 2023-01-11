@@ -334,7 +334,7 @@ private:
 	 * @param[in] fDuration duration of buffer (in sec)
 	 * @param[in] copy to map or transfer the buffer
 	 */
-	void SendHelper(MediaType mediaType, const void *ptr, size_t len, double fpts, double fdts, double fDuration, bool copy)
+	bool SendHelper(MediaType mediaType, const void *ptr, size_t len, double fpts, double fdts, double fDuration, bool copy)
 	{
 		const char* mediaTypeStr = (mediaType == eMEDIATYPE_AUDIO) ? "AUDIO" : "VIDEO";
 		media_stream* stream = &aamp->stream[mediaType];
@@ -347,7 +347,7 @@ private:
 		if (mediaType == eMEDIATYPE_AUDIO)
 		{
 			GST_WARNING_OBJECT(aamp, "%s:%d Discard audio track- not sending data\n", __FUNCTION__, __LINE__);
-			return;
+			return false;
 		}
 #endif
 
@@ -356,7 +356,7 @@ private:
 			if (!gst_aamp_ready(aamp))
 			{
 				GST_WARNING_OBJECT(aamp, "%s:%d Not ready to consume data type(%s)\n", __FUNCTION__, __LINE__, mediaTypeStr);
-				return;
+				return false;
 			}
 			readyToSend = true;
 		}
@@ -393,7 +393,7 @@ private:
 		else
 		{
 			GST_WARNING_OBJECT(aamp, "%s:%d Pad NULL mediaType(%s) len(%d) fpts(%f)\n", __FUNCTION__, __LINE__, mediaTypeStr, (int)len, fpts);
-			return;
+			return false;
 		}
 
 		GstClockTime pts = (GstClockTime)(fpts * GST_SECOND);
@@ -454,6 +454,7 @@ private:
 		}
 
 		GST_TRACE_OBJECT(aamp, "%s:%d Exit", __FUNCTION__, __LINE__);
+		return bPushBuffer;
 	}
 
 public:
@@ -556,9 +557,9 @@ public:
 	 * @param[in] fDuration duration of buffer (in sec)
 	 * @note Caller owns ptr, may free on return
 	 */
-	void SendCopy(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
+	bool SendCopy(MediaType mediaType, const void *ptr, size_t len0, double fpts, double fdts, double fDuration)
 	{
-		SendHelper(mediaType, ptr, len0, fpts, fdts, fDuration, true /*copy*/);
+		return SendHelper(mediaType, ptr, len0, fpts, fdts, fDuration, true /*copy*/);
 	}
 
 	/**
@@ -571,12 +572,9 @@ public:
 	 * @param[in] initFragment flag to indicate init header
 	 * @note Ownership of pBuffer is transferred
 	 */
-	void SendTransfer(MediaType mediaType, GrowableBuffer* pBuffer, double fpts, double fdts, double fDuration, bool initFragment = false, bool discontinuity = false)
+	bool SendTransfer(MediaType mediaType, void *ptr, size_t len, double fpts, double fdts, double fDuration, bool initFragment = false, bool discontinuity = false)
 	{
-		SendHelper(mediaType, pBuffer->ptr, pBuffer->len, fpts, fdts, fDuration, false /*transfer*/);
-
-		/*Since ownership of buffer is given to gstreamer, reset pBuffer*/
-		memset(pBuffer, 0x00, sizeof(GrowableBuffer));
+		return SendHelper(mediaType, ptr, len, fpts, fdts, fDuration, false /*transfer*/);
 	}
 
 	/**
